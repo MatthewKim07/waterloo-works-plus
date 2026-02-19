@@ -595,7 +595,61 @@
     return results.filter((item) => item && !item.error);
   }
 
-  function buildTopRankingsCard(scoredJobs) {
+  function openJobEntry(entry) {
+    if (!entry || !entry.job) return false;
+
+    if (entry.job.url) {
+      location.href = entry.job.url;
+      return true;
+    }
+
+    if (entry.job.anchor) {
+      const rawHref = String(entry.job.anchor.getAttribute("href") || "").trim();
+      const lowerHref = rawHref.toLowerCase();
+      const isJavascriptHref = lowerHref.startsWith("javascript:");
+      const isHashHref = lowerHref === "#";
+
+      // Avoid CSP violations from javascript: links in WaterlooWorks tables.
+      if (rawHref && !isJavascriptHref && !isHashHref) {
+        const absolute = normalizeUrl(rawHref);
+        if (absolute) {
+          location.href = absolute;
+          return true;
+        }
+      }
+
+      if (isJavascriptHref) {
+        // Let site handlers open the posting while blocking javascript: default navigation.
+        const blockDefault = (event) => {
+          event.preventDefault();
+        };
+        entry.job.anchor.addEventListener("click", blockDefault, { capture: true, once: true });
+        try {
+          entry.job.anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+          return true;
+        } catch (_error) {
+          // fall through to row click
+        }
+      } else {
+        try {
+          entry.job.anchor.click();
+          return true;
+        } catch (_error) {
+          // fall through to row click
+        }
+      }
+    }
+
+    if (entry.job.row) {
+      entry.job.row.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+      return true;
+    }
+
+    return false;
+  }
+
+  function buildTopRankingsCard(scoredJobs, handlers) {
+    const onSelect = handlers && typeof handlers.onSelect === "function" ? handlers.onSelect : null;
     const card = ns.makeCard("Top Ranked Jobs");
     const list = document.createElement("ul");
     list.className = "wwp-list";
@@ -606,7 +660,29 @@
       .slice(0, 10)
       .forEach((entry, index) => {
         const li = document.createElement("li");
-        li.textContent = `${index + 1}. ${entry.job.title} @ ${entry.job.company} | Skill ${entry.skillMatch}% | Viability ${entry.viability.score}%`;
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = `${index + 1}. ${entry.job.title} @ ${entry.job.company} | Skill ${entry.skillMatch}% | Viability ${entry.viability.score}%`;
+        btn.style.width = "100%";
+        btn.style.textAlign = "left";
+        btn.style.border = "1px solid #334155";
+        btn.style.background = "#0b1220";
+        btn.style.color = "#dbeafe";
+        btn.style.borderRadius = "8px";
+        btn.style.padding = "8px";
+        btn.style.cursor = "pointer";
+        btn.style.font = "inherit";
+        btn.addEventListener("click", () => {
+          if (onSelect) onSelect(entry);
+          openJobEntry(entry);
+        });
+        btn.addEventListener("mouseover", () => {
+          btn.style.borderColor = "#60a5fa";
+        });
+        btn.addEventListener("mouseout", () => {
+          btn.style.borderColor = "#334155";
+        });
+        li.appendChild(btn);
         list.appendChild(li);
       });
 
@@ -759,6 +835,10 @@
       },
       true
     );
+
+    return {
+      render
+    };
   }
 
   function buildFlagsCard(scoredJobs, settings) {
@@ -871,9 +951,14 @@
 
     tabs.appendToTab("overview", metrics);
     tabs.appendToTab("overview", rec);
-    tabs.appendToTab("rankings", buildTopRankingsCard(scoredJobs));
+    const selection = wireSelectedJobInteraction(scoredJobs, tabs, gate.settings, panel);
+    tabs.appendToTab(
+      "rankings",
+      buildTopRankingsCard(scoredJobs, {
+        onSelect: selection && selection.render ? selection.render : null
+      })
+    );
     tabs.appendToTab("flags", buildFlagsCard(scoredJobs, gate.settings));
-    wireSelectedJobInteraction(scoredJobs, tabs, gate.settings, panel);
   }
 
   run().catch((error) => {

@@ -110,9 +110,12 @@
   ns.createShadowPanel = function createShadowPanel(opts) {
     const options = opts || {};
     const hostId = options.id || "wwp-panel-host";
+    const launcherId = `${hostId}-launcher`;
 
     const existing = document.getElementById(hostId);
     if (existing) existing.remove();
+    const existingLauncher = document.getElementById(launcherId);
+    if (existingLauncher) existingLauncher.remove();
 
     const host = document.createElement("div");
     host.id = hostId;
@@ -144,10 +147,43 @@
     actions.style.display = "flex";
     actions.style.gap = "6px";
 
+    const launcher = document.createElement("button");
+    launcher.id = launcherId;
+    launcher.type = "button";
+    launcher.textContent = options.launcherText || "WW+";
+    launcher.title = "Open WaterlooWorks+";
+    launcher.style.position = "fixed";
+    launcher.style.right = options.launcherRight || "14px";
+    launcher.style.bottom = options.launcherBottom || "18px";
+    launcher.style.zIndex = "2147483645";
+    launcher.style.width = "42px";
+    launcher.style.height = "42px";
+    launcher.style.borderRadius = "999px";
+    launcher.style.border = "1px solid #1e3a8a";
+    launcher.style.background = "linear-gradient(135deg, #1d4ed8, #1e40af)";
+    launcher.style.color = "#eff6ff";
+    launcher.style.font = "700 11px/1 -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
+    launcher.style.cursor = "pointer";
+    launcher.style.boxShadow = "0 10px 24px rgba(2, 6, 23, 0.35)";
+    launcher.style.display = "none";
+
+    function showPanel() {
+      host.style.display = "block";
+      launcher.style.display = "none";
+    }
+
+    function hidePanel() {
+      host.style.display = "none";
+      launcher.style.display = "block";
+      if (typeof options.onClose === "function") {
+        options.onClose();
+      }
+    }
+
     const closeBtn = document.createElement("button");
     closeBtn.className = "wwp-button";
     closeBtn.textContent = "Close";
-    closeBtn.addEventListener("click", () => host.remove());
+    closeBtn.addEventListener("click", hidePanel);
     actions.appendChild(closeBtn);
 
     if (typeof options.onDisablePage === "function") {
@@ -166,14 +202,23 @@
     panel.append(header, body);
     shadow.appendChild(panel);
     document.documentElement.appendChild(host);
+    launcher.addEventListener("click", showPanel);
+    document.documentElement.appendChild(launcher);
 
     return {
       host,
+      launcher,
       shadow,
       panel,
       body,
       setSubtitle(text) {
         subtitle.textContent = text;
+      },
+      open() {
+        showPanel();
+      },
+      close() {
+        hidePanel();
       }
     };
   };
