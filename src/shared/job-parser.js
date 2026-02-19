@@ -81,6 +81,18 @@
       /(gpa\s*(of|>=|>|minimum)?\s*\d(?:\.\d{1,2})?|minimum\s*gpa\s*\d(?:\.\d{1,2})?)/i
     );
     const firstYearCompletion = /(first[- ]year\s*(completed|completion)|completed\s*first\s*year)/.test(lowerText);
+    const mastersRequired =
+      /(currently\s+enrolled\s+in\s+(a\s+)?master'?s|must\s+be\s+(currently\s+)?enrolled\s+in\s+(a\s+)?master'?s|master'?s\s+program\s+(required|only))/i.test(
+        fullText
+      );
+    const phdRequired =
+      /(currently\s+enrolled\s+in\s+(a\s+)?ph\.?d|must\s+be\s+(currently\s+)?enrolled\s+in\s+(a\s+)?ph\.?d|ph\.?d\s+(students?\s+)?(required|only))/i.test(
+        fullText
+      );
+    const graduateOnly =
+      /(graduate\s+students?\s+only|must\s+be\s+a\s+graduate\s+student|for\s+master'?s\s+or\s+ph\.?d|graduate[- ]level\s+students?\s+only)/i.test(
+        fullText
+      );
 
     const termRestriction = detectConstraintValue(
       fullText,
@@ -103,7 +115,10 @@
       transcriptRequired,
       gpaRequirement,
       firstYearCompletion,
-      termRestriction
+      termRestriction,
+      mastersRequired,
+      phdRequired,
+      graduateOnly
     };
 
     return {

@@ -107,7 +107,7 @@
 
     const panel = ns.createShadowPanel({
       id: "wwp-ratings-panel",
-      title: "WaterlooWorks+ Ratings Intelligence",
+      title: "WaterlooWorks+",
       subtitle: "Hiring history and competitiveness",
       width: 390,
       onDisablePage: () => ns.disableCurrentPage()

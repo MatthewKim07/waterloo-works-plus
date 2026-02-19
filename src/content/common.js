@@ -123,7 +123,48 @@
     if (constraints.gpaRequirement) flags.push(`GPA req: ${constraints.gpaRequirement}`);
     if (constraints.firstYearCompletion) flags.push("First-year completion");
     if (constraints.termRestriction) flags.push("Term restriction");
+    if (constraints.mastersRequired) flags.push("Master's enrollment required");
+    if (constraints.phdRequired) flags.push("PhD enrollment required");
+    if (constraints.graduateOnly) flags.push("Graduate students only");
     return flags;
+  };
+
+  function inferUserAcademicProfile(settings) {
+    const preferences = settings && settings.preferences ? settings.preferences : {};
+    const resumeText = String((settings && settings.resumeRawText) || "").toLowerCase();
+    const faculty = String(preferences.faculty || "").toLowerCase();
+
+    const hasPhdSignal = /(ph\.?d|doctoral|doctorate)/.test(resumeText) || /(ph\.?d|doctoral|doctorate)/.test(faculty);
+    const hasGradSignal =
+      hasPhdSignal ||
+      /(master'?s|msc|m\.?eng|masc|graduate student|grad student)/.test(resumeText) ||
+      /(master'?s|graduate)/.test(faculty);
+
+    return {
+      isPhd: hasPhdSignal,
+      isGraduate: hasGradSignal
+    };
+  }
+
+  ns.detectHardDisqualifier = function detectHardDisqualifier(constraints, settings) {
+    const c = constraints || {};
+    const profile = inferUserAcademicProfile(settings || {});
+    const reasons = [];
+
+    if (c.phdRequired && !profile.isPhd) {
+      reasons.push("Posting requires current PhD enrollment.");
+    }
+    if (c.mastersRequired && !profile.isGraduate) {
+      reasons.push("Posting requires current Master's enrollment.");
+    }
+    if (c.graduateOnly && !profile.isGraduate) {
+      reasons.push("Posting is restricted to graduate students.");
+    }
+
+    return {
+      doNotApply: reasons.length > 0,
+      reasons
+    };
   };
 
   ns.scoreRolePreference = function scoreRolePreference(jobText, targetRole) {

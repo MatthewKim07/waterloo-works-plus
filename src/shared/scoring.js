@@ -198,6 +198,18 @@
   ns.recommendAction = function recommendAction(viability, flags) {
     const value = ns.clamp(Number(viability) || 0, 0, 100);
     const activeFlags = flags || {};
+
+    if (activeFlags.hardDisqualifier) {
+      const reasons = Array.isArray(activeFlags.hardReasons) ? activeFlags.hardReasons : [];
+      return {
+        label: "Do not apply",
+        reasons: (reasons.length ? reasons : ["Posting has a hard eligibility requirement that does not match your profile."]).slice(
+          0,
+          2
+        )
+      };
+    }
+
     let label = "Apply as a reach";
 
     if (value >= 80) label = "Apply aggressively";

@@ -560,16 +560,21 @@
         termLengthBoost;
 
       const flags = ns.getConstraintFlagLabels(parsed.constraints);
+      const hard = ns.detectHardDisqualifier(parsed.constraints, settings);
       const rec = ns.recommendAction(viability.score, {
         eightMonthPreferred: !!parsed.constraints.eightMonthPreferred,
         userTermLength: settings.preferences.preferredTermLength,
         highSkillMatch: skillMatch >= 70,
-        lowSkillMatch: skillMatch < 45
+        lowSkillMatch: skillMatch < 45,
+        hardDisqualifier: hard.doNotApply,
+        hardReasons: hard.reasons
       });
 
       if (panel) {
         panel.setSubtitle(`Analyzed ${index + 1} / ${jobs.length} postings`);
       }
+
+      const adjustedRankingScore = hard.doNotApply ? Math.max(0, rankingScore - 60) : rankingScore;
 
       return {
         job,
@@ -578,10 +583,12 @@
         baseSkillMatch,
         keywordSkillMatch,
         viability,
-        rankingScore,
+        rankingScore: adjustedRankingScore,
         requiredSkills: parsed.requiredSkills,
         flags,
-        recommendation: rec
+        recommendation: rec,
+        hardDisqualifier: hard.doNotApply,
+        hardReasons: hard.reasons
       };
     });
 
@@ -621,7 +628,10 @@
 
     let fitLabel = "Low fit - likely skip";
     let tone = "danger";
-    if (entry.viability.score >= 75) {
+    if (entry.hardDisqualifier) {
+      fitLabel = "Do not apply - confirmed not a fit";
+      tone = "danger";
+    } else if (entry.viability.score >= 75) {
       fitLabel = "Strong fit - apply";
       tone = "good";
     } else if (entry.viability.score >= 60) {
@@ -792,7 +802,7 @@
 
     const panel = ns.createShadowPanel({
       id: "wwp-listings-panel",
-      title: "WaterlooWorks+ Rankings",
+      title: "WaterlooWorks+",
       subtitle: "Scanning listings...",
       width: 390,
       onDisablePage: () => ns.disableCurrentPage()

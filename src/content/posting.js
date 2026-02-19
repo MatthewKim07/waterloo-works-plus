@@ -36,6 +36,9 @@
     if (constraints.gpaRequirement) chips.push({ text: constraints.gpaRequirement, tone: "danger" });
     if (constraints.firstYearCompletion) chips.push({ text: "First-year completion", tone: "" });
     if (constraints.termRestriction) chips.push({ text: constraints.termRestriction, tone: "danger" });
+    if (constraints.mastersRequired) chips.push({ text: "Master's enrollment required", tone: "danger" });
+    if (constraints.phdRequired) chips.push({ text: "PhD enrollment required", tone: "danger" });
+    if (constraints.graduateOnly) chips.push({ text: "Graduate students only", tone: "danger" });
     return chips;
   }
 
@@ -105,12 +108,15 @@
     const facultyAlignment = 50;
     const viability = ns.computeViabilityScore(skillMatch, termCompatibility, facultyAlignment, 0);
 
+    const hard = ns.detectHardDisqualifier(parsed.constraints, gate.settings);
     const flags = ns.getUserFlagsFromConstraints(parsed.constraints, gate.settings.preferences, { skillMatch });
+    flags.hardDisqualifier = hard.doNotApply;
+    flags.hardReasons = hard.reasons;
     const recommendation = ns.recommendAction(viability.score, flags);
 
     const panel = ns.createShadowPanel({
       id: "wwp-posting-panel",
-      title: "WaterlooWorks+ Intelligence",
+      title: "WaterlooWorks+",
       subtitle: "Posting-specific extraction and strategy",
       width: 390,
       onDisablePage: () => ns.disableCurrentPage()
