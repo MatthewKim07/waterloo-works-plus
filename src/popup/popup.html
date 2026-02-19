@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WaterlooWorks+</title>
+    <link rel="stylesheet" href="./popup.css" />
+  </head>
+  <body>
+    <main>
+      <h1>WaterlooWorks+</h1>
+
+      <label class="row">
+        <input id="globalToggle" type="checkbox" />
+        <span>Enabled globally</span>
+      </label>
+
+      <button id="togglePageBtn" type="button">Disable on this page</button>
+      <button id="openOptionsBtn" type="button" class="secondary">Open full settings</button>
+
+      <p id="status"></p>
+    </main>
+
+    <script src="../shared/storage.js"></script>
+    <script src="./popup.js"></script>
+  </body>
+</html>

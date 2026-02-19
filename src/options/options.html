@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WaterlooWorks+ Options</title>
+    <link rel="stylesheet" href="./options.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header>
+        <h1>WaterlooWorks+ Settings</h1>
+        <p>Configure resume matching and ranking preferences.</p>
+      </header>
+
+      <section class="card">
+        <h2>Global Controls</h2>
+        <label class="row">
+          <input type="checkbox" id="enabledToggle" />
+          <span>Enable WaterlooWorks+ globally</span>
+        </label>
+      </section>
+
+      <section class="card">
+        <h2>Resume Input</h2>
+        <label class="label" for="resumeUpload">Upload Resume (PDF, DOCX, TXT)</label>
+        <input id="resumeUpload" type="file" accept=".pdf,.docx,.txt" />
+
+        <label class="label" for="resumeText">Or Paste Resume Text</label>
+        <textarea id="resumeText" rows="10" placeholder="Paste resume content..."></textarea>
+
+        <div class="actions">
+          <button id="parseResumeBtn" type="button">Parse Resume</button>
+          <button id="clearResumeBtn" type="button" class="secondary">Clear Resume</button>
+        </div>
+
+        <p id="resumeStatus" class="status"></p>
+        <div id="skillsPreview" class="chips"></div>
+      </section>
+
+      <section class="card">
+        <h2>Preferences</h2>
+        <div class="grid">
+          <label>
+            Work Term Number
+            <input id="workTerm" type="number" min="1" max="12" value="1" />
+          </label>
+
+          <label>
+            Faculty
+            <input id="faculty" type="text" placeholder="Engineering, Math, Arts..." />
+          </label>
+
+          <label>
+            Target Role
+            <input id="targetRole" type="text" placeholder="Software Engineer, Data Analyst..." />
+          </label>
+
+          <label>
+            Industry Preferences (comma-separated)
+            <input id="industries" type="text" placeholder="Fintech, Health, Robotics" />
+          </label>
+        </div>
+
+        <fieldset>
+          <legend>Preferred Work Term Length</legend>
+          <label><input type="radio" name="termLength" value="4" checked /> 4 months</label>
+          <label><input type="radio" name="termLength" value="8" /> 8 months</label>
+          <label><input type="radio" name="termLength" value="either" /> Either</label>
+        </fieldset>
+
+        <div class="actions">
+          <button id="savePrefsBtn" type="button">Save Preferences</button>
+        </div>
+        <p id="prefsStatus" class="status"></p>
+      </section>
+    </main>
+
+    <script src="../shared/storage.js"></script>
+    <script src="../shared/skills.js"></script>
+    <script src="../shared/utils.js"></script>
+    <script src="../shared/resume-parser.js"></script>
+    <script src="./options.js"></script>
+  </body>
+</html>

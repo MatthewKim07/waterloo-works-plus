@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "WaterlooWorks+",
+  "description": "Client-side WaterlooWorks intelligence: resume matching, job parsing, and ratings insights.",
+  "version": "0.1.0",
+  "permissions": ["storage", "tabs"],
+  "host_permissions": [
+    "*://waterlooworks.uwaterloo.ca/*",
+    "*://*.waterlooworks.uwaterloo.ca/*"
+  ],
+  "background": {
+    "service_worker": "src/background/service-worker.js"
+  },
+  "action": {
+    "default_title": "WaterlooWorks+",
+    "default_popup": "src/popup/popup.html"
+  },
+  "options_page": "src/options/options.html",
+  "content_scripts": [
+    {
+      "matches": [
+        "*://waterlooworks.uwaterloo.ca/*",
+        "*://*.waterlooworks.uwaterloo.ca/*"
+      ],
+      "all_frames": true,
+      "js": [
+        "src/shared/storage.js",
+        "src/shared/skills.js",
+        "src/shared/utils.js",
+        "src/shared/resume-parser.js",
+        "src/shared/job-parser.js",
+        "src/shared/ratings-parser.js",
+        "src/shared/scoring.js",
+        "src/shared/ui.js",
+        "src/content/common.js",
+        "src/content/listings.js",
+        "src/content/posting.js",
+        "src/content/ratings.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}
