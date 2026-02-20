@@ -73,8 +73,8 @@
       setStatus(disabled ? `Disabled on ${path}` : `Enabled on ${path}`);
     });
 
-    byId("openOptionsBtn").addEventListener("click", () => {
-      chrome.runtime.openOptionsPage();
+    byId("openAppBtn").addEventListener("click", () => {
+      chrome.tabs.create({ url: chrome.runtime.getURL("src/app/app.html") });
     });
 
     await refreshPageToggleText();

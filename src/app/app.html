@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WaterlooWorks+ App</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="../assets/icons/icon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="../assets/icons/icon-16.png" />
+    <link rel="stylesheet" href="./app.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="app-sidebar">
+        <div class="brand-block">
+          <img class="brand-logo" src="../assets/icons/logo.png" alt="WaterlooWorks+ logo" />
+        </div>
+        <p class="tagline">Your co-op intelligence copilot</p>
+        <p class="sidebar-note">Tune your profile once and get better ranked opportunities every session.</p>
+        <nav>
+          <a href="#global">Global</a>
+          <a href="#resume">Resume</a>
+          <a href="#prefs">Preferences</a>
+        </nav>
+      </aside>
+
+      <section class="app-content">
+        <header class="hero">
+          <div>
+            <h1>WaterlooWorks+ App</h1>
+            <p>Manage your resume profile and matching preferences in one place.</p>
+          </div>
+          <span class="hero-pill">Client-side only</span>
+        </header>
+
+        <section class="card" id="global">
+          <h2>Global Controls</h2>
+          <p class="section-note">Quickly turn WaterlooWorks+ on or off across all pages.</p>
+          <label class="row">
+            <input type="checkbox" id="enabledToggle" />
+            <span>Enable WaterlooWorks+ globally</span>
+          </label>
+        </section>
+
+        <section class="card" id="resume">
+          <h2>Resume Input</h2>
+          <p class="section-note">Upload or paste your latest resume. We parse skills locally and save to extension storage.</p>
+          <label class="label" for="resumeUpload">Upload Resume (PDF, DOCX, TXT)</label>
+          <label class="file-shell" for="resumeUpload">
+            <span class="file-btn">Select Resume File</span>
+            <span class="file-name" id="resumeFileName">No file selected</span>
+          </label>
+          <input class="file-input" id="resumeUpload" type="file" accept=".pdf,.docx,.txt" />
+
+          <label class="label" for="resumeText">Or Paste Resume Text</label>
+          <textarea id="resumeText" rows="12" placeholder="Paste resume content..." spellcheck="false"></textarea>
+
+          <div class="actions">
+            <button id="parseResumeBtn" type="button">Parse Resume</button>
+            <button id="clearResumeBtn" type="button" class="secondary">Clear Resume</button>
+          </div>
+
+          <p id="resumeStatus" class="status"></p>
+          <div id="skillsPreview" class="chips"></div>
+        </section>
+
+        <section class="card" id="prefs">
+          <h2>Preferences</h2>
+          <p class="section-note">Set your baseline goals. We use these to re-rank and recommend jobs.</p>
+          <div class="grid">
+            <label>
+              Work Term Number
+              <input id="workTerm" type="number" min="1" max="12" value="1" />
+            </label>
+
+            <label>
+              Faculty
+              <input id="faculty" type="text" placeholder="Engineering, Math, Arts..." />
+            </label>
+
+            <label>
+              Target Role
+              <input id="targetRole" type="text" placeholder="Software Engineer, Data Analyst..." />
+            </label>
+
+            <label>
+              Industry Preferences (comma-separated)
+              <input id="industries" type="text" placeholder="Fintech, Health, Robotics" />
+            </label>
+          </div>
+
+          <fieldset>
+            <legend>Preferred Work Term Length</legend>
+            <label><input type="radio" name="termLength" value="4" checked /> 4 months</label>
+            <label><input type="radio" name="termLength" value="8" /> 8 months</label>
+            <label><input type="radio" name="termLength" value="either" /> Either</label>
+          </fieldset>
+
+          <div class="actions">
+            <button id="savePrefsBtn" type="button">Save Preferences</button>
+          </div>
+          <p id="prefsStatus" class="status"></p>
+        </section>
+      </section>
+    </main>
+
+    <script src="../shared/storage.js"></script>
+    <script src="../shared/skills.js"></script>
+    <script src="../shared/utils.js"></script>
+    <script src="../shared/resume-parser.js"></script>
+    <script src="../options/options.js"></script>
+  </body>
+</html>

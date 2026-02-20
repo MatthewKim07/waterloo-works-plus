@@ -12,6 +12,12 @@
     node.style.color = isError ? "#b91c1c" : "#475569";
   }
 
+  function setResumeFileNameLabel(name) {
+    const label = byId("resumeFileName");
+    if (!label) return;
+    label.textContent = name || "No file selected";
+  }
+
   function renderSkillsPreview(skillsMap) {
     const container = byId("skillsPreview");
     container.innerHTML = "";
@@ -63,6 +69,7 @@
     byId("industries").value = (settings.preferences.industries || []).join(", ");
     setSelectedTermLength(settings.preferences.preferredTermLength || "4");
 
+    setResumeFileNameLabel("");
     renderSkillsPreview(ns.getResumeSkillMap(settings));
   }
 
@@ -99,6 +106,7 @@
   function wireEvents() {
     byId("resumeUpload").addEventListener("change", async (event) => {
       const file = event.target.files && event.target.files[0];
+      setResumeFileNameLabel(file ? file.name : "");
       await handleResumeUpload(file);
     });
 
@@ -119,6 +127,7 @@
 
       byId("resumeText").value = "";
       byId("resumeUpload").value = "";
+      setResumeFileNameLabel("");
       renderSkillsPreview(new Map());
       setStatus("resumeStatus", "Stored resume data cleared.", false);
     });

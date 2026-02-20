@@ -11,11 +11,22 @@
   "background": {
     "service_worker": "src/background/service-worker.js"
   },
+  "icons": {
+    "16": "src/assets/icons/icon-16.png",
+    "32": "src/assets/icons/icon-32.png",
+    "48": "src/assets/icons/icon-48.png",
+    "128": "src/assets/icons/icon-128.png"
+  },
   "action": {
     "default_title": "WaterlooWorks+",
+    "default_icon": {
+      "16": "src/assets/icons/icon-16.png",
+      "32": "src/assets/icons/icon-32.png",
+      "48": "src/assets/icons/icon-48.png"
+    },
     "default_popup": "src/popup/popup.html"
   },
-  "options_page": "src/options/options.html",
+  "options_page": "src/app/app.html",
   "content_scripts": [
     {
       "matches": [

@@ -10,7 +10,7 @@ All processing is done locally in the browser (`chrome.storage.local`), with no 
 
 ## Features (MVP)
 
-- Resume upload/paste in options page (`PDF`, `DOCX`, `TXT`, or pasted text)
+- Resume upload/paste in the WaterlooWorks+ app page (`PDF`, `DOCX`, `TXT`, or pasted text)
 - Resume parsing (`parseResume`) using dictionary + regex + n-gram scoring
 - Listings-page job scraping + re-ranking with score badges
 - Posting-page requirement extraction + constraints chips + recommendation panel
@@ -30,6 +30,9 @@ All processing is done locally in the browser (`chrome.storage.local`), with no 
 └── src
     ├── background
     │   └── service-worker.js
+    ├── app
+    │   ├── app.css
+    │   └── app.html
     ├── content
     │   ├── common.js
     │   ├── listings.js
@@ -60,6 +63,11 @@ All processing is done locally in the browser (`chrome.storage.local`), with no 
 2. Enable **Developer mode**.
 3. Click **Load unpacked**.
 4. Select this project folder (root containing `manifest.json`).
+
+## Open the WaterlooWorks+ App Page
+
+- Click the extension icon, then click **Open WaterlooWorks+ App**.
+- You can also open it from Chrome extension details via **Extension options**.
 
 ## Build / Run
 
@@ -106,4 +114,3 @@ Selectors are intentionally resilient and heuristic. Some selectors include `TOD
   - If not available, falls back to table-driven insights
   - If chart values are inaccessible, shows chart-unavailable notices
 - Page detection and row parsing may require minor selector updates if WaterlooWorks DOM changes.
-
