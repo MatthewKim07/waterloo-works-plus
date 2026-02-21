@@ -69,12 +69,27 @@
           <div class="grid">
             <label>
               Work Term Number
-              <input id="workTerm" type="number" min="1" max="12" value="1" />
+              <select id="workTerm">
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="6">6+</option>
+              </select>
             </label>
 
             <label>
               Faculty
-              <input id="faculty" type="text" placeholder="Engineering, Math, Arts..." />
+              <input id="faculty" type="text" list="facultyOptions" placeholder="Select faculty..." />
+              <datalist id="facultyOptions">
+                <option value="Engineering"></option>
+                <option value="Mathematics"></option>
+                <option value="Science"></option>
+                <option value="Arts"></option>
+                <option value="Environment"></option>
+                <option value="Health"></option>
+              </datalist>
             </label>
 
             <label>
@@ -106,6 +121,7 @@
     <script src="../shared/storage.js"></script>
     <script src="../shared/skills.js"></script>
     <script src="../shared/utils.js"></script>
+    <script src="../vendor/fflate.js"></script>
     <script src="../shared/resume-parser.js"></script>
     <script src="../options/options.js"></script>
   </body>

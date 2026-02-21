@@ -28,6 +28,9 @@
     if (!constraints) return chips;
     if (constraints.workTermLength) chips.push({ text: `${constraints.workTermLength}-month term`, tone: "" });
     if (constraints.eightMonthPreferred) chips.push({ text: "8-month preferred", tone: "warn" });
+    if (constraints.fourMonthPreferred) chips.push({ text: "4-month preferred", tone: "" });
+    if (constraints.eightMonthRequired) chips.push({ text: "8-month required", tone: "danger" });
+    if (constraints.fourMonthRequired) chips.push({ text: "4-month required", tone: "danger" });
     if (constraints.coverLetterRequired) chips.push({ text: "Cover letter required", tone: "warn" });
     if (constraints.coverLetterRecommended && !constraints.coverLetterRequired) {
       chips.push({ text: "Cover letter recommended", tone: "" });

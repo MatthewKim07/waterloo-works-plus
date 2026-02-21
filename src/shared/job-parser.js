@@ -40,6 +40,80 @@
     return match ? match[0].trim() : null;
   }
 
+  function detectTermSignals(lowerText) {
+    const text = String(lowerText || "");
+
+    const fourMonthMention = /(?:^|[^0-9])4\s*[- ]?month(?:s)?\b|four\s*[- ]?month(?:s)?\b/.test(text);
+    const eightMonthMention = /(?:^|[^0-9])8\s*[- ]?month(?:s)?\b|eight\s*[- ]?month(?:s)?\b|two\s*work\s*terms?\b/.test(text);
+
+    const bothMentioned =
+      /(?:4|four)\s*[- ]?month(?:s)?\s*(?:or|\/|and|&)\s*(?:8|eight)\s*[- ]?month(?:s)?/.test(text) ||
+      /(?:8|eight)\s*[- ]?month(?:s)?\s*(?:or|\/|and|&)\s*(?:4|four)\s*[- ]?month(?:s)?/.test(text);
+
+    const eightMonthPreferred =
+      /(?:8|eight)\s*[- ]?month(?:s)?\s*(?:preferred|preferable|ideally)/.test(text) ||
+      /prefer(?:red)?\s*(?:an?\s*)?(?:8|eight)\s*[- ]?month(?:s)?/.test(text) ||
+      /two\s*work\s*terms?\s*preferred/.test(text);
+
+    const fourMonthPreferred =
+      /(?:4|four)\s*[- ]?month(?:s)?\s*(?:preferred|preferable|ideally)/.test(text) ||
+      /prefer(?:red)?\s*(?:an?\s*)?(?:4|four)\s*[- ]?month(?:s)?/.test(text);
+
+    const eightMonthRequired =
+      /(?:8|eight)\s*[- ]?month(?:s)?\s*(?:required|mandatory|only)/.test(text) ||
+      /must\s*(?:be|do)?\s*(?:an?\s*)?(?:8|eight)\s*[- ]?month(?:s)?/.test(text) ||
+      /requires?\s*(?:an?\s*)?(?:8|eight)\s*[- ]?month(?:s)?/.test(text) ||
+      /two\s*work\s*terms?\s*(?:required|mandatory)/.test(text);
+
+    const fourMonthRequired =
+      /(?:4|four)\s*[- ]?month(?:s)?\s*(?:required|mandatory|only)/.test(text) ||
+      /must\s*(?:be|do)?\s*(?:an?\s*)?(?:4|four)\s*[- ]?month(?:s)?/.test(text) ||
+      /requires?\s*(?:an?\s*)?(?:4|four)\s*[- ]?month(?:s)?/.test(text);
+
+    const fourExplicitlyAccepted =
+      /(?:4|four)\s*[- ]?month(?:s)?\s*(?:accepted|considered|possible|available|option|okay|ok)/.test(text) ||
+      /open\s+to\s+(?:4|four)\s*[- ]?month(?:s)?/.test(text);
+
+    const eightExplicitlyAccepted =
+      /(?:8|eight)\s*[- ]?month(?:s)?\s*(?:accepted|considered|possible|available|option|okay|ok)/.test(text) ||
+      /open\s+to\s+(?:8|eight)\s*[- ]?month(?:s)?/.test(text) ||
+      /open\s+to\s+two\s*work\s*terms?/.test(text);
+
+    let acceptsFourMonth = null;
+    let acceptsEightMonth = null;
+
+    if (bothMentioned) {
+      acceptsFourMonth = true;
+      acceptsEightMonth = true;
+    } else if (fourMonthRequired && !eightExplicitlyAccepted) {
+      acceptsFourMonth = true;
+      acceptsEightMonth = false;
+    } else if (eightMonthRequired && !fourExplicitlyAccepted) {
+      acceptsFourMonth = false;
+      acceptsEightMonth = true;
+    } else {
+      if (fourMonthMention || fourExplicitlyAccepted || fourMonthPreferred) acceptsFourMonth = true;
+      if (eightMonthMention || eightExplicitlyAccepted || eightMonthPreferred) acceptsEightMonth = true;
+    }
+
+    if (fourExplicitlyAccepted) acceptsFourMonth = true;
+    if (eightExplicitlyAccepted) acceptsEightMonth = true;
+
+    if (acceptsFourMonth == null && !acceptsEightMonth && fourMonthMention) acceptsFourMonth = true;
+    if (acceptsEightMonth == null && !acceptsFourMonth && eightMonthMention) acceptsEightMonth = true;
+
+    return {
+      fourMonthMention,
+      eightMonthMention,
+      fourMonthPreferred,
+      eightMonthPreferred,
+      fourMonthRequired,
+      eightMonthRequired,
+      acceptsFourMonth,
+      acceptsEightMonth
+    };
+  }
+
   ns.parseJobPosting = function parseJobPosting(htmlOrDoc) {
     const doc = asDocument(htmlOrDoc);
 
@@ -61,16 +135,17 @@
 
     const lowerText = fullText.toLowerCase();
 
-    const eightMonthPreferred = /8\s*[- ]?month\s*(preferred|required)?|two\s*work\s*terms/.test(lowerText);
-    const fourMonthMention = /4\s*[- ]?month/.test(lowerText);
+    const termSignals = detectTermSignals(lowerText);
 
     let workTermLength = null;
-    if (eightMonthPreferred && !fourMonthMention) {
+    if (termSignals.eightMonthRequired && !termSignals.acceptsFourMonth) {
       workTermLength = 8;
-    } else if (fourMonthMention && !eightMonthPreferred) {
+    } else if (termSignals.fourMonthRequired && !termSignals.acceptsEightMonth) {
       workTermLength = 4;
-    } else if (eightMonthPreferred && fourMonthMention) {
+    } else if (termSignals.acceptsEightMonth && !termSignals.acceptsFourMonth) {
       workTermLength = 8;
+    } else if (termSignals.acceptsFourMonth && !termSignals.acceptsEightMonth) {
+      workTermLength = 4;
     }
 
     const coverLetterRequired = /cover letter\s*(is\s*)?(required|mandatory)/.test(lowerText);
@@ -109,7 +184,14 @@
 
     const constraints = {
       workTermLength,
-      eightMonthPreferred,
+      fourMonthMention: termSignals.fourMonthMention,
+      eightMonthMention: termSignals.eightMonthMention,
+      fourMonthPreferred: termSignals.fourMonthPreferred,
+      eightMonthPreferred: termSignals.eightMonthPreferred,
+      fourMonthRequired: termSignals.fourMonthRequired,
+      eightMonthRequired: termSignals.eightMonthRequired,
+      acceptsFourMonth: termSignals.acceptsFourMonth,
+      acceptsEightMonth: termSignals.acceptsEightMonth,
       coverLetterRequired,
       coverLetterRecommended,
       transcriptRequired,

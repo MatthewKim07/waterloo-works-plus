@@ -117,6 +117,9 @@
     if (!constraints) return [];
     const flags = [];
     if (constraints.eightMonthPreferred) flags.push("8-month preferred");
+    if (constraints.fourMonthPreferred) flags.push("4-month preferred");
+    if (constraints.eightMonthRequired) flags.push("8-month required");
+    if (constraints.fourMonthRequired) flags.push("4-month required");
     if (constraints.coverLetterRequired) flags.push("Cover letter required");
     if (constraints.coverLetterRecommended && !constraints.coverLetterRequired) flags.push("Cover letter recommended");
     if (constraints.transcriptRequired) flags.push("Transcript required");
@@ -192,15 +195,26 @@
     if (!constraints) return 0;
     if (preferredTermLength === "either") return 2;
 
+    const acceptsFour = constraints.acceptsFourMonth === true;
+    const acceptsEight = constraints.acceptsEightMonth === true;
+    const requiresFour = constraints.fourMonthRequired === true;
+    const requiresEight = constraints.eightMonthRequired === true;
+
     if (preferredTermLength === "8") {
-      if (constraints.eightMonthPreferred || constraints.workTermLength === 8) return 10;
-      if (constraints.workTermLength === 4) return -8;
+      if (requiresEight) return 12;
+      if (constraints.eightMonthPreferred && acceptsEight) return 10;
+      if (acceptsEight && acceptsFour) return 7;
+      if (acceptsEight) return 8;
+      if (requiresFour || (acceptsFour && !acceptsEight) || constraints.workTermLength === 4) return -14;
       return 0;
     }
 
     if (preferredTermLength === "4") {
-      if (constraints.eightMonthPreferred || constraints.workTermLength === 8) return -8;
-      if (constraints.workTermLength === 4) return 8;
+      if (requiresFour) return 12;
+      if (constraints.fourMonthPreferred && acceptsFour) return 10;
+      if (acceptsEight && acceptsFour) return 7;
+      if (acceptsFour) return 8;
+      if (requiresEight || (acceptsEight && !acceptsFour) || constraints.workTermLength === 8) return -14;
       return 0;
     }
 

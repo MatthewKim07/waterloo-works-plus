@@ -9,6 +9,8 @@
     style.id = "wwp-inline-row-style";
     style.textContent = `
       .wwp-row-selected { box-shadow: inset 0 0 0 2px #2563eb; }
+      .wwp-row-hidden-by-smart-search { display: none !important; }
+      .wwp-row-hidden-by-term-filter { display: none !important; }
     `;
     document.head.appendChild(style);
   }
@@ -441,6 +443,66 @@
     return 60;
   }
 
+  function evaluatePreferredTermEligibility(constraints, preferredTermLength) {
+    const pref = String(preferredTermLength || "4");
+    const c = constraints || {};
+    const acceptsFour = c.acceptsFourMonth === true;
+    const acceptsEight = c.acceptsEightMonth === true;
+
+    if (pref === "either") {
+      return { eligible: true, reason: "Either term length accepted by user preference." };
+    }
+
+    if (pref === "4") {
+      if (acceptsFour) {
+        if (c.eightMonthPreferred && acceptsFour) {
+          return { eligible: true, reason: "8-month preferred but still accepts 4-month terms." };
+        }
+        return { eligible: true, reason: "Posting accepts 4-month term." };
+      }
+      return { eligible: false, reason: "Posting does not indicate 4-month eligibility." };
+    }
+
+    if (pref === "8") {
+      if (acceptsEight) {
+        if (c.fourMonthPreferred && acceptsEight) {
+          return { eligible: true, reason: "4-month preferred but still accepts 8-month terms." };
+        }
+        return { eligible: true, reason: "Posting accepts 8-month term." };
+      }
+      return { eligible: false, reason: "Posting does not indicate 8-month eligibility." };
+    }
+
+    return { eligible: true, reason: "No strict term preference selected." };
+  }
+
+  function applyStrictPreferredTermFilter(entries, preferredTermLength) {
+    const pref = String(preferredTermLength || "4");
+    const out = [];
+    let hiddenCount = 0;
+
+    entries.forEach((entry) => {
+      const decision = evaluatePreferredTermEligibility(entry.parsed && entry.parsed.constraints, pref);
+      entry.termEligibility = decision;
+      const hideRow = pref !== "either" && !decision.eligible;
+
+      if (entry.job && entry.job.row) {
+        entry.job.row.classList.toggle("wwp-row-hidden-by-term-filter", hideRow);
+      }
+
+      if (hideRow) {
+        hiddenCount += 1;
+      } else {
+        out.push(entry);
+      }
+    });
+
+    return {
+      filtered: out,
+      hiddenCount
+    };
+  }
+
   function escapeRegex(text) {
     return String(text || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
@@ -646,6 +708,417 @@
     }
 
     return false;
+  }
+
+  const ROLE_QUERY_SYNONYMS = {
+    "software engineer": ["swe", "software developer", "developer", "engineering", "programmer", "backend", "frontend", "full stack"],
+    "software developer": ["software engineer", "developer", "swe", "backend", "frontend", "full stack"],
+    "data analyst": ["business analyst", "analytics", "sql", "tableau", "power bi", "data"],
+    "data engineer": ["etl", "data pipeline", "data engineering", "spark", "sql", "backend"],
+    "data scientist": ["machine learning", "ml", "ai", "statistics", "python", "data"],
+    "product manager": ["product management", "pm", "strategy", "roadmap", "stakeholder"],
+    "qa": ["quality assurance", "testing", "automation", "test engineer", "sdet"],
+    "security": ["cybersecurity", "infosec", "security analyst", "application security"]
+  };
+
+  function getSiteKeywordQuery() {
+    const selectors = [
+      "input[placeholder*='Keyword']",
+      "input[aria-label*='Keyword']",
+      "input[name*='keyword']",
+      "input[id*='keyword']",
+      "input[name='q']"
+    ];
+
+    for (const selector of selectors) {
+      const node = document.querySelector(selector);
+      const value = node && typeof node.value === "string" ? node.value.trim() : "";
+      if (value) return value;
+    }
+    return "";
+  }
+
+  function normalizeSearchWord(value) {
+    return ns.simpleStem(ns.normalizeToken(value || ""));
+  }
+
+  function tokenizeSearchWords(value) {
+    return ns
+      .tokenize(String(value || ""))
+      .map((token) => normalizeSearchWord(token))
+      .filter((token) => token && token.length >= 2);
+  }
+
+  function getQueryPhrases(query) {
+    const raw = String(query || "").trim().toLowerCase();
+    if (!raw) return [];
+
+    const phrases = [];
+    const quoted = raw.match(/"([^"]{2,})"/g) || [];
+    quoted.forEach((phrase) => {
+      const clean = phrase.replace(/^"|"$/g, "").trim();
+      if (clean) phrases.push(clean);
+    });
+
+    const stripped = raw.replace(/"[^"]{2,}"/g, " ").replace(/\s+/g, " ").trim();
+    if (stripped.split(" ").length >= 2) {
+      phrases.push(stripped);
+    }
+
+    return ns.unique(phrases.map((x) => x.trim()).filter(Boolean));
+  }
+
+  function expandQueryTerms(query, settings) {
+    const queryText = String(query || "").trim().toLowerCase();
+    const baseTokens = new Set(tokenizeSearchWords(queryText));
+    const phrases = getQueryPhrases(queryText);
+
+    const phraseSet = new Set(ns.unique(phrases));
+    const seededWords = new Set([...baseTokens, ...tokenizeSearchWords(Array.from(phraseSet).join(" "))]);
+
+    Array.from(seededWords).forEach((word) => {
+      const skillEntry = (ns.SKILLS_DICTIONARY || []).find((entry) => {
+        const keyWord = normalizeSearchWord(entry.key);
+        if (keyWord === word) return true;
+        return (entry.aliases || []).some((alias) => normalizeSearchWord(alias) === word);
+      });
+      if (!skillEntry) return;
+
+      tokenizeSearchWords(skillEntry.key).forEach((token) => baseTokens.add(token));
+      (skillEntry.aliases || []).forEach((alias) => tokenizeSearchWords(alias).forEach((token) => baseTokens.add(token)));
+    });
+
+    const phraseBlob = queryText.toLowerCase();
+    Object.entries(ROLE_QUERY_SYNONYMS).forEach(([needle, synonyms]) => {
+      if (!phraseBlob.includes(needle)) return;
+      tokenizeSearchWords(needle).forEach((token) => baseTokens.add(token));
+      synonyms.forEach((item) => {
+        tokenizeSearchWords(item).forEach((token) => baseTokens.add(token));
+        if (item.split(/\s+/).length >= 2) phraseSet.add(item);
+      });
+    });
+
+    return {
+      hasQuery: queryText.length > 0,
+      queryText,
+      tokens: Array.from(baseTokens),
+      phrases: Array.from(phraseSet)
+    };
+  }
+
+  function ensureEntrySearchIndex(entry) {
+    if (entry.__wwpSearchIndex) return entry.__wwpSearchIndex;
+
+    const requiredSkills = (entry.requiredSkills || []).join(" ");
+    const preferredSkills = (entry.parsed && entry.parsed.preferredSkills ? entry.parsed.preferredSkills : []).join(" ");
+    const combined = [entry.job.title, entry.job.company, entry.job.location, entry.job.snippet, requiredSkills, preferredSkills, entry.parsed.fullText.slice(0, 5000)]
+      .join(" ")
+      .toLowerCase();
+    const titleLower = String(entry.job.title || "").toLowerCase();
+    const titleTokenSet = new Set(tokenizeSearchWords(titleLower));
+    const tokenSet = new Set(tokenizeSearchWords(combined));
+    const requiredTokenSet = new Set(tokenizeSearchWords(`${requiredSkills} ${preferredSkills}`));
+
+    const index = {
+      combined,
+      titleLower,
+      titleTokenSet,
+      tokenSet,
+      requiredTokenSet
+    };
+
+    entry.__wwpSearchIndex = index;
+    return index;
+  }
+
+  function computeSmartQuerySignal(entry, queryCtx) {
+    const index = ensureEntrySearchIndex(entry);
+    const hasQuery = queryCtx && queryCtx.hasQuery;
+    if (!hasQuery) {
+      return {
+        raw: entry.rankingScore * 1.2 + entry.skillMatch * 0.45 + entry.viability.score * 0.25,
+        hits: 0,
+        titleHits: 0,
+        requiredHits: 0
+      };
+    }
+
+    let raw = entry.skillMatch * 0.42 + entry.viability.score * 0.28 + entry.rankingScore * 0.18;
+    let hits = 0;
+    let titleHits = 0;
+    let requiredHits = 0;
+
+    for (const phrase of queryCtx.phrases || []) {
+      const cleanPhrase = String(phrase || "").trim().toLowerCase();
+      if (!cleanPhrase) continue;
+      if (index.titleLower.includes(cleanPhrase)) {
+        raw += 30;
+        titleHits += 1;
+        hits += 2;
+      } else if (index.combined.includes(cleanPhrase)) {
+        raw += 14;
+        hits += 1;
+      }
+    }
+
+    for (const token of queryCtx.tokens || []) {
+      const word = normalizeSearchWord(token);
+      if (!word) continue;
+
+      const titleMatch = index.titleTokenSet.has(word) || index.titleLower.includes(word);
+      const requiredMatch = index.requiredTokenSet.has(word);
+      const fullMatch = index.tokenSet.has(word) || index.combined.includes(word);
+
+      if (titleMatch) {
+        raw += 11;
+        titleHits += 1;
+        hits += 1;
+      }
+      if (requiredMatch) {
+        raw += 9;
+        requiredHits += 1;
+        hits += 1;
+      }
+      if (!titleMatch && !requiredMatch && fullMatch) {
+        raw += 5;
+        hits += 1;
+      }
+    }
+
+    if (hits === 0) {
+      raw -= 90;
+    }
+
+    return {
+      raw,
+      hits,
+      titleHits,
+      requiredHits
+    };
+  }
+
+  function computeSmartSearchResults(scoredJobs, query, settings) {
+    const queryCtx = expandQueryTerms(query, settings);
+    const prelim = scoredJobs.map((entry) => {
+      const signal = computeSmartQuerySignal(entry, queryCtx);
+      return {
+        entry,
+        raw: signal.raw,
+        hits: signal.hits,
+        titleHits: signal.titleHits,
+        requiredHits: signal.requiredHits
+      };
+    });
+
+    const values = prelim.map((item) => item.raw);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+
+    const normalized = prelim.map((item) => {
+      let smartScore = 50;
+      if (max > min) {
+        smartScore = Math.round(((item.raw - min) / (max - min)) * 100);
+      } else if (queryCtx.hasQuery && item.hits > 0) {
+        smartScore = 70;
+      } else if (queryCtx.hasQuery) {
+        smartScore = 20;
+      }
+
+      return {
+        entry: item.entry,
+        smartScore: ns.clamp(smartScore, 0, 100),
+        hits: item.hits,
+        titleHits: item.titleHits,
+        requiredHits: item.requiredHits
+      };
+    });
+
+    normalized.sort((a, b) => {
+      if (b.smartScore !== a.smartScore) return b.smartScore - a.smartScore;
+      if (b.hits !== a.hits) return b.hits - a.hits;
+      return b.entry.rankingScore - a.entry.rankingScore;
+    });
+
+    return {
+      queryCtx,
+      results: normalized
+    };
+  }
+
+  function applySmartSearchLayout(scoredJobs, rankedResults, targetContainer, hideUnmatched) {
+    const allEntries = scoredJobs.slice();
+    const rankedEntries = rankedResults.map((item) => item.entry);
+    const rankedSet = new Set(rankedEntries);
+
+    if (targetContainer) {
+      const inContainerRanked = rankedEntries.filter((entry) => entry.job.row && entry.job.row.parentElement === targetContainer);
+      const inContainerUnranked = allEntries.filter(
+        (entry) => !rankedSet.has(entry) && entry.job.row && entry.job.row.parentElement === targetContainer
+      );
+      inContainerRanked.concat(inContainerUnranked).forEach((entry) => targetContainer.appendChild(entry.job.row));
+    }
+
+    allEntries.forEach((entry) => {
+      const row = entry.job.row;
+      if (!row) return;
+      const isMatched = rankedSet.has(entry);
+      row.classList.toggle("wwp-row-hidden-by-smart-search", !!hideUnmatched && !isMatched);
+    });
+  }
+
+  function buildSmartSearchCard(scoredJobs, settings, panel, targetContainer, onSelectEntry) {
+    const card = ns.makeCard("Smart Search");
+
+    const note = document.createElement("p");
+    note.className = "wwp-inline-note";
+    note.textContent = "Search by role or skills. Results are ranked by your resume match, constraints, and preference signals.";
+    card.appendChild(note);
+
+    const inputRow = document.createElement("div");
+    inputRow.className = "wwp-input-row";
+    const queryInput = document.createElement("input");
+    queryInput.type = "text";
+    queryInput.className = "wwp-input";
+    queryInput.placeholder = 'Try: "software engineer", data analyst, backend, react';
+    const runBtn = document.createElement("button");
+    runBtn.type = "button";
+    runBtn.className = "wwp-button";
+    runBtn.textContent = "Search";
+    inputRow.append(queryInput, runBtn);
+    card.appendChild(inputRow);
+
+    const actionRow = document.createElement("div");
+    actionRow.className = "wwp-inline-actions";
+
+    const targetRoleBtn = document.createElement("button");
+    targetRoleBtn.type = "button";
+    targetRoleBtn.className = "wwp-button";
+    targetRoleBtn.textContent = "Use My Target Role";
+
+    const clearBtn = document.createElement("button");
+    clearBtn.type = "button";
+    clearBtn.className = "wwp-button";
+    clearBtn.textContent = "Clear";
+
+    const hideToggleWrap = document.createElement("label");
+    hideToggleWrap.className = "wwp-check";
+    const hideToggle = document.createElement("input");
+    hideToggle.type = "checkbox";
+    hideToggle.checked = true;
+    const hideToggleText = document.createElement("span");
+    hideToggleText.textContent = "Only show matched rows";
+    hideToggleWrap.append(hideToggle, hideToggleText);
+
+    actionRow.append(targetRoleBtn, clearBtn, hideToggleWrap);
+    card.appendChild(actionRow);
+
+    const status = document.createElement("p");
+    status.className = "wwp-inline-note";
+    card.appendChild(status);
+
+    const resultsWrap = document.createElement("div");
+    resultsWrap.className = "wwp-search-results";
+    card.appendChild(resultsWrap);
+
+    function renderResults(displayResults, queryCtx) {
+      resultsWrap.innerHTML = "";
+      const list = displayResults.slice(0, 35);
+      if (!list.length) {
+        const empty = document.createElement("p");
+        empty.className = "wwp-inline-note";
+        empty.textContent = queryCtx.hasQuery
+          ? "No strong matches on this loaded page. Try broader terms or disable WaterlooWorks filters."
+          : "Type a role or skill to run smart search.";
+        resultsWrap.appendChild(empty);
+        return;
+      }
+
+      list.forEach((item, idx) => {
+        const entry = item.entry;
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "wwp-search-item";
+
+        const titleLine = document.createElement("div");
+        titleLine.textContent = `${idx + 1}. ${entry.job.title}`;
+        const metaLine = document.createElement("div");
+        metaLine.className = "meta";
+        metaLine.textContent = `${entry.job.company || "Unknown"} | Smart ${item.smartScore}% | Skill ${entry.skillMatch}% | Viability ${entry.viability.score}%`;
+
+        button.append(titleLine, metaLine);
+        button.addEventListener("click", () => {
+          if (typeof onSelectEntry === "function") onSelectEntry(entry);
+          openJobEntry(entry);
+        });
+
+        resultsWrap.appendChild(button);
+      });
+    }
+
+    function runSearch() {
+      const query = queryInput.value.trim();
+      const computed = computeSmartSearchResults(scoredJobs, query, settings);
+      const baseResults = computed.results;
+      const shouldFilter = !!hideToggle.checked && computed.queryCtx.hasQuery;
+
+      const displayResults = shouldFilter
+        ? baseResults.filter((item) => item.hits > 0 && item.smartScore >= 15)
+        : baseResults;
+      const activeFilter = shouldFilter && displayResults.length > 0;
+      const layoutResults = activeFilter ? displayResults : baseResults;
+      applySmartSearchLayout(scoredJobs, layoutResults, targetContainer, activeFilter);
+
+      const shown = displayResults.length;
+      const total = scoredJobs.length;
+      if (computed.queryCtx.hasQuery) {
+        if (activeFilter) {
+          status.textContent = `Showing ${shown} / ${total} jobs for "${query}".`;
+        } else if (shouldFilter && shown === 0) {
+          status.textContent = `No strong matches for "${query}" on this page. Showing baseline ranking instead.`;
+        } else {
+          status.textContent = `Smart-ranked ${total} jobs for "${query}" (rows not filtered).`;
+        }
+      } else {
+        status.textContent = `Showing ranked baseline across ${total} jobs. Enter a query for targeted matches.`;
+      }
+
+      if (panel && typeof panel.setSubtitle === "function") {
+        if (computed.queryCtx.hasQuery) {
+          panel.setSubtitle(activeFilter ? `Smart search: ${shown} matches` : `Smart search: ${shown} strong matches`);
+        } else {
+          panel.setSubtitle(`Ranked ${total} jobs`);
+        }
+      }
+
+      renderResults(displayResults, computed.queryCtx);
+    }
+
+    runBtn.addEventListener("click", runSearch);
+    queryInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        runSearch();
+      }
+    });
+    hideToggle.addEventListener("change", runSearch);
+
+    targetRoleBtn.addEventListener("click", () => {
+      queryInput.value = String(settings.preferences.targetRole || "").trim();
+      runSearch();
+    });
+
+    clearBtn.addEventListener("click", () => {
+      queryInput.value = "";
+      runSearch();
+    });
+
+    const initialQuery = getSiteKeywordQuery() || String(settings.preferences.targetRole || "").trim();
+    if (initialQuery) {
+      queryInput.value = initialQuery;
+    }
+    runSearch();
+
+    return card;
   }
 
   function buildTopRankingsCard(scoredJobs, handlers) {
@@ -892,6 +1365,7 @@
       [
         { id: "overview", label: "Overview" },
         { id: "selected", label: "Selected Job" },
+        { id: "search", label: "Smart Search" },
         { id: "rankings", label: "Rankings" },
         { id: "flags", label: "Flags" }
       ],
@@ -924,12 +1398,23 @@
       return;
     }
 
-    scoredJobs.forEach((entry) => annotateRow(entry.job, entry));
-    reorderRows(scoredJobs, container);
+    const termFiltered = applyStrictPreferredTermFilter(scoredJobs, gate.settings.preferences.preferredTermLength);
+    const eligibleJobs = termFiltered.filtered;
 
-    panel.setSubtitle(`Ranked ${scoredJobs.length} jobs`);
+    if (!eligibleJobs.length) {
+      const noneCard = ns.makeCard("Term-Length Filter");
+      noneCard.innerHTML += `<p class="wwp-inline-note">No postings match your strict term-length preference (${gate.settings.preferences.preferredTermLength}-month). Try changing to "Either" to see all postings.</p>`;
+      tabs.appendToTab("overview", noneCard);
+      panel.setSubtitle("No jobs match preferred term length");
+      return;
+    }
 
-    const top = scoredJobs.slice().sort((a, b) => b.rankingScore - a.rankingScore)[0];
+    eligibleJobs.forEach((entry) => annotateRow(entry.job, entry));
+    reorderRows(eligibleJobs, container);
+
+    panel.setSubtitle(`Ranked ${eligibleJobs.length} jobs`);
+
+    const top = eligibleJobs.slice().sort((a, b) => b.rankingScore - a.rankingScore)[0];
     const metrics = ns.makeCard("Top Job Score Breakdown");
     metrics.appendChild(ns.makeProgressMetric("Skill Match", top.skillMatch));
     metrics.appendChild(ns.makeProgressMetric("Viability", top.viability.score));
@@ -949,16 +1434,34 @@
     });
     rec.append(recTitle, recList);
 
+    const termFilterCard = ns.makeCard("Term-Length Filter");
+    const prefLabel = gate.settings.preferences.preferredTermLength === "either" ? "Either" : `${gate.settings.preferences.preferredTermLength}-month`;
+    termFilterCard.innerHTML += `<p class="wwp-inline-note">Preference: <strong>${prefLabel}</strong>. Showing ${eligibleJobs.length} of ${scoredJobs.length} analyzed rows.</p>`;
+    if (termFiltered.hiddenCount > 0 && gate.settings.preferences.preferredTermLength !== "either") {
+      termFilterCard.innerHTML += `<p class="wwp-inline-note">${termFiltered.hiddenCount} rows were hidden because they did not explicitly match your selected term-length rule.</p>`;
+    }
+
+    tabs.appendToTab("overview", termFilterCard);
     tabs.appendToTab("overview", metrics);
     tabs.appendToTab("overview", rec);
-    const selection = wireSelectedJobInteraction(scoredJobs, tabs, gate.settings, panel);
+    const selection = wireSelectedJobInteraction(eligibleJobs, tabs, gate.settings, panel);
+    tabs.appendToTab(
+      "search",
+      buildSmartSearchCard(
+        eligibleJobs,
+        gate.settings,
+        panel,
+        container,
+        selection && selection.render ? selection.render : null
+      )
+    );
     tabs.appendToTab(
       "rankings",
-      buildTopRankingsCard(scoredJobs, {
+      buildTopRankingsCard(eligibleJobs, {
         onSelect: selection && selection.render ? selection.render : null
       })
     );
-    tabs.appendToTab("flags", buildFlagsCard(scoredJobs, gate.settings));
+    tabs.appendToTab("flags", buildFlagsCard(eligibleJobs, gate.settings));
   }
 
   run().catch((error) => {

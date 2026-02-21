@@ -40,7 +40,9 @@
     safe.resumeSkills = input.resumeSkills && typeof input.resumeSkills === "object" ? input.resumeSkills : {};
 
     const pref = input.preferences && typeof input.preferences === "object" ? input.preferences : {};
-    safe.preferences.workTerm = Number.isFinite(Number(pref.workTerm)) ? Math.max(1, Number(pref.workTerm)) : 1;
+    safe.preferences.workTerm = Number.isFinite(Number(pref.workTerm))
+      ? Math.min(6, Math.max(1, Number(pref.workTerm)))
+      : 1;
     safe.preferences.faculty = typeof pref.faculty === "string" ? pref.faculty : "Engineering";
     safe.preferences.targetRole = typeof pref.targetRole === "string" ? pref.targetRole : "";
     safe.preferences.industries = Array.isArray(pref.industries)

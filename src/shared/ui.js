@@ -66,6 +66,66 @@
         cursor: pointer;
       }
       .wwp-button:hover { border-color: #60a5fa; }
+      .wwp-input {
+        width: 100%;
+        appearance: none;
+        border: 1px solid #334155;
+        border-radius: 8px;
+        background: #0b1220;
+        color: #e2e8f0;
+        padding: 8px 9px;
+        font: inherit;
+      }
+      .wwp-input:focus {
+        outline: none;
+        border-color: #60a5fa;
+        box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.18);
+      }
+      .wwp-input::placeholder { color: #94a3b8; }
+      .wwp-input-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        align-items: center;
+      }
+      .wwp-inline-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+      }
+      .wwp-check {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        color: #cbd5e1;
+      }
+      .wwp-search-results {
+        margin-top: 6px;
+        max-height: 52vh;
+        overflow: auto;
+        display: grid;
+        gap: 6px;
+      }
+      .wwp-search-item {
+        appearance: none;
+        width: 100%;
+        border: 1px solid #334155;
+        border-radius: 8px;
+        padding: 8px;
+        background: #0b1220;
+        color: #dbeafe;
+        text-align: left;
+        font: inherit;
+        cursor: pointer;
+      }
+      .wwp-search-item:hover { border-color: #60a5fa; }
+      .wwp-search-item .meta {
+        margin-top: 4px;
+        font-size: 11px;
+        color: #93c5fd;
+      }
       .wwp-kv { margin: 0; display: grid; gap: 4px; }
       .wwp-kv div { display: grid; grid-template-columns: 1fr auto; gap: 8px; font-size: 12px; }
       .wwp-mini-badge {
