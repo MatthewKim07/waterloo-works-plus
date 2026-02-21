@@ -137,6 +137,116 @@ button.secondary {
   font-size: 0.86rem;
 }
 
+.skill-editor {
+  display: grid;
+  gap: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+  background: #f8fbff;
+}
+
+.skill-editor-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.skill-editor-head h3 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.skill-add-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.skill-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px dashed #bcd0f5;
+  border-radius: 10px;
+  background: #f3f8ff;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #1f3e7e;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.legend-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  border: 1px solid #93b8f2;
+}
+
+.legend-swatch-parsed {
+  background: #dbeafe;
+}
+
+.legend-swatch-manual {
+  background: #dcfce7;
+  border-color: #86efac;
+}
+
+.autocomplete {
+  position: relative;
+}
+
+.autocomplete-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid #aac3f0;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.15);
+  z-index: 30;
+}
+
+.autocomplete-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 10px;
+  background: #fff;
+  border: 0;
+  border-bottom: 1px solid #edf2ff;
+  text-align: left;
+  color: #17356c;
+  cursor: pointer;
+  font-size: 0.88rem;
+}
+
+.autocomplete-item:last-child {
+  border-bottom: 0;
+}
+
+.autocomplete-item:hover,
+.autocomplete-item.active {
+  background: #eef4ff;
+}
+
+.autocomplete-item small {
+  color: #5d729b;
+  font-size: 0.75rem;
+}
+
 .chips {
   display: flex;
   gap: 6px;
@@ -152,6 +262,38 @@ button.secondary {
   padding: 3px 8px;
 }
 
+.chip-editable {
+  cursor: pointer;
+  transition: filter 120ms ease;
+}
+
+.chip-editable:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.chip-editable:hover {
+  filter: brightness(0.98);
+}
+
+.chip-parsed {
+  border-color: #93c5fd;
+  background: #dbeafe;
+  color: #1e3a8a;
+}
+
+.chip-manual {
+  border-color: #86efac;
+  background: #dcfce7;
+  color: #166534;
+}
+
+.chip-removed {
+  border-color: #fca5a5;
+  background: #fee2e2;
+  color: #991b1b;
+}
+
 @media (max-width: 680px) {
   body {
     padding: 12px;
@@ -159,5 +301,9 @@ button.secondary {
 
   .actions {
     flex-direction: column;
+  }
+
+  .skill-add-row {
+    grid-template-columns: 1fr;
   }
 }

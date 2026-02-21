@@ -60,7 +60,34 @@
           </div>
 
           <p id="resumeStatus" class="status"></p>
-          <div id="skillsPreview" class="chips"></div>
+
+          <div class="skill-editor">
+            <div class="skill-editor-head">
+              <h3>Skill Controls</h3>
+              <p id="skillsSummary" class="status"></p>
+            </div>
+
+            <label class="label" for="skillInput">Add Skill (suggested or custom)</label>
+            <div class="skill-add-row">
+              <div class="autocomplete">
+                <input id="skillInput" type="text" placeholder="e.g., react native, kubernetes, fastapi" autocomplete="off" />
+                <div id="skillAutocomplete" class="autocomplete-list" hidden></div>
+              </div>
+              <button id="addSkillBtn" type="button" class="secondary">Add Skill</button>
+            </div>
+            <p id="skillEditStatus" class="status"></p>
+
+            <div class="skill-legend" role="note" aria-label="Skill source legend">
+              <span class="legend-item"><span class="legend-swatch legend-swatch-parsed"></span>Parsed from resume (click chip to hide)</span>
+              <span class="legend-item"><span class="legend-swatch legend-swatch-manual"></span>Manual skill (click chip to remove)</span>
+            </div>
+
+            <label class="label">Active Skills Used For Matching (editable)</label>
+            <div id="skillsPreview" class="chips"></div>
+
+            <label class="label">Hidden Parsed Skills (not used for matching, click to restore)</label>
+            <div id="hiddenParsedSkillsPreview" class="chips"></div>
+          </div>
         </section>
 
         <section class="card" id="prefs">
@@ -81,15 +108,10 @@
 
             <label>
               Faculty
-              <input id="faculty" type="text" list="facultyOptions" placeholder="Select faculty..." />
-              <datalist id="facultyOptions">
-                <option value="Engineering"></option>
-                <option value="Mathematics"></option>
-                <option value="Science"></option>
-                <option value="Arts"></option>
-                <option value="Environment"></option>
-                <option value="Health"></option>
-              </datalist>
+              <div class="autocomplete">
+                <input id="faculty" type="text" placeholder="Select faculty..." autocomplete="off" />
+                <div id="facultyAutocomplete" class="autocomplete-list" hidden></div>
+              </div>
             </label>
 
             <label>

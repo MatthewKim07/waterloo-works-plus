@@ -11,6 +11,8 @@
     disabledPaths: [],
     resumeRawText: "",
     resumeSkills: {},
+    manualSkills: {},
+    excludedResumeSkills: [],
     preferences: {
       workTerm: 1,
       faculty: "Engineering",
@@ -38,6 +40,10 @@
 
     safe.resumeRawText = typeof input.resumeRawText === "string" ? input.resumeRawText : "";
     safe.resumeSkills = input.resumeSkills && typeof input.resumeSkills === "object" ? input.resumeSkills : {};
+    safe.manualSkills = input.manualSkills && typeof input.manualSkills === "object" ? input.manualSkills : {};
+    safe.excludedResumeSkills = Array.isArray(input.excludedResumeSkills)
+      ? input.excludedResumeSkills.filter((x) => typeof x === "string" && x.trim())
+      : [];
 
     const pref = input.preferences && typeof input.preferences === "object" ? input.preferences : {};
     safe.preferences.workTerm = Number.isFinite(Number(pref.workTerm))
@@ -116,11 +122,32 @@
   };
 
   ns.getResumeSkillMap = function getResumeSkillMap(settings) {
-    const data = settings && settings.resumeSkills ? settings.resumeSkills : {};
+    const parsedData = settings && settings.resumeSkills ? settings.resumeSkills : {};
+    const manualData = settings && settings.manualSkills ? settings.manualSkills : {};
+    const excludedSet = new Set(
+      Array.isArray(settings && settings.excludedResumeSkills)
+        ? settings.excludedResumeSkills.map((x) => String(x || "").trim().toLowerCase()).filter(Boolean)
+        : []
+    );
     const map = new Map();
-    for (const [key, value] of Object.entries(data)) {
-      if (typeof key === "string" && Number.isFinite(Number(value))) {
-        map.set(key, Number(value));
+
+    for (const [key, value] of Object.entries(parsedData)) {
+      const skill = typeof key === "string" ? key.trim() : "";
+      if (!skill || excludedSet.has(skill.toLowerCase())) continue;
+      if (Number.isFinite(Number(value))) {
+        map.set(skill, Number(value));
+      }
+    }
+
+    for (const [key, value] of Object.entries(manualData)) {
+      const skill = typeof key === "string" ? key.trim() : "";
+      if (!skill) continue;
+      const manualWeight = Number(value);
+      if (!Number.isFinite(manualWeight) || manualWeight <= 0) continue;
+      const existing = map.get(skill) || 0;
+      map.set(skill, Math.max(existing, manualWeight));
+      if (excludedSet.has(skill.toLowerCase())) {
+        excludedSet.delete(skill.toLowerCase());
       }
     }
     return map;

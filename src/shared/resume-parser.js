@@ -78,8 +78,97 @@
     const start = source.search(/\btechnical\s*skills\b/i);
     if (start < 0) return "";
     const window = source.slice(start, start + 2500);
-    const end = window.search(/\bexperience\b/i);
+    const end = window.search(/\b(experience|work experience|projects|education)\b/i);
     return end > 0 ? window.slice(0, end) : window;
+  }
+
+  function buildSkillAliasIndex() {
+    const byNormalized = new Map();
+    const byCompact = new Map();
+
+    for (const entry of ns.SKILLS_DICTIONARY || []) {
+      const key = String(entry && entry.key ? entry.key : "").trim();
+      if (!key) continue;
+      const aliases = Array.isArray(entry.aliases) ? entry.aliases : [];
+
+      for (const aliasRaw of aliases) {
+        const alias = ns.normalizeToken(aliasRaw);
+        if (!alias) continue;
+
+        if (!byNormalized.has(alias)) byNormalized.set(alias, new Set());
+        byNormalized.get(alias).add(key);
+
+        const compact = normalizeForCompactMatch(alias);
+        if (compact.length >= 3) {
+          if (!byCompact.has(compact)) byCompact.set(compact, new Set());
+          byCompact.get(compact).add(key);
+        }
+      }
+    }
+
+    return { byNormalized, byCompact };
+  }
+
+  function collectLookupKeys(set) {
+    return set ? Array.from(set) : [];
+  }
+
+  function resolveSkillKeysFromCandidate(candidate, aliasIndex) {
+    const out = new Set();
+    const candidateText = String(candidate || "").trim();
+    if (!candidateText) return out;
+
+    const norm = ns.normalizeToken(candidateText);
+    if (!norm) return out;
+
+    const variants = new Set([norm]);
+    if (norm.endsWith("s") && norm.length > 4) variants.add(norm.replace(/s$/, ""));
+    variants.add(norm.replace(/\s*\/\s*/g, "/"));
+    variants.add(norm.replace(/\s*-\s*/g, "-"));
+
+    for (const variant of variants) {
+      for (const key of collectLookupKeys(aliasIndex.byNormalized.get(variant))) {
+        out.add(key);
+      }
+      const compact = normalizeForCompactMatch(variant);
+      for (const key of collectLookupKeys(aliasIndex.byCompact.get(compact))) {
+        out.add(key);
+      }
+    }
+
+    return out;
+  }
+
+  function extractDelimitedSkillCandidates(technicalSectionRaw) {
+    const source = String(technicalSectionRaw || "");
+    if (!source) return [];
+
+    const cleaned = source
+      .replace(/\u2022|•|·|▪|◦|●/g, ", ")
+      .replace(/\b(technical skills|languages|frameworks\s*&\s*libraries|frameworks|libraries|tools|technologies|platforms|databases)\s*:/gi, "\n")
+      .replace(/\s+[|]\s+/g, ", ")
+      .replace(/\s{2,}/g, " ");
+
+    const parts = cleaned
+      .split(/[\n,;]+/g)
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    const candidates = [];
+    for (const part of parts) {
+      if (part.length < 2 || part.length > 80) continue;
+      candidates.push(part);
+
+      // Split slash-separated list segments when they are likely separate items.
+      if (/\s\/\s/.test(part) && !/c\/c\+\+|can\/lin/i.test(part)) {
+        for (const sub of part.split(/\s\/\s/)) {
+          const value = sub.trim();
+          if (value && value.length >= 2) candidates.push(value);
+        }
+      }
+    }
+
+    return candidates;
   }
 
   function normalizePdfArtifacts(input) {
@@ -121,7 +210,18 @@
     const tokens = ns.tokenize(lower);
     const ngrams = ns.generateNgrams(tokens, 1, 3);
     const compactResume = normalizeForCompactMatch(lower);
-    const technicalSection = extractTechnicalSection(lower);
+    const technicalSectionRaw = extractTechnicalSection(cleanedResumeText);
+    const technicalSection = technicalSectionRaw.toLowerCase();
+    const aliasIndex = buildSkillAliasIndex();
+    const sectionCandidates = extractDelimitedSkillCandidates(technicalSectionRaw);
+    const sectionCandidateBoosts = new Map();
+
+    for (const candidate of sectionCandidates) {
+      const keys = resolveSkillKeysFromCandidate(candidate, aliasIndex);
+      for (const key of keys) {
+        sectionCandidateBoosts.set(key, (sectionCandidateBoosts.get(key) || 0) + 1);
+      }
+    }
 
     const gramCount = new Map();
     for (const gram of ngrams) {
@@ -162,6 +262,11 @@
         if (lexicalHits > 0 || compactFallbackHits > 0 || sectionBoost > 0) {
           skillScore += (lexicalHits + compactFallbackHits + sectionBoost) * baseWeight;
         }
+      }
+
+      const explicitSectionHits = sectionCandidateBoosts.get(entry.key) || 0;
+      if (explicitSectionHits > 0) {
+        skillScore += explicitSectionHits * 2.2 * baseWeight;
       }
 
       if (skillScore > 0) {
