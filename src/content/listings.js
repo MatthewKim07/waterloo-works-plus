@@ -11,6 +11,7 @@
       .wwp-row-selected { box-shadow: inset 0 0 0 2px #2563eb; }
       .wwp-row-hidden-by-smart-search { display: none !important; }
       .wwp-row-hidden-by-term-filter { display: none !important; }
+      .wwp-row-hidden-by-hard-filter { display: none !important; }
     `;
     document.head.appendChild(style);
   }
@@ -446,25 +447,41 @@
   function evaluatePreferredTermEligibility(constraints, preferredTermLength) {
     const pref = String(preferredTermLength || "4");
     const c = constraints || {};
-    const acceptsFour = c.acceptsFourMonth === true;
-    const acceptsEight = c.acceptsEightMonth === true;
+    const acceptsFourRaw = c.acceptsFourMonth;
+    const acceptsEightRaw = c.acceptsEightMonth;
+    const acceptsFour = acceptsFourRaw === true;
+    const acceptsEight = acceptsEightRaw === true;
+    const rejectsFour = acceptsFourRaw === false;
+    const rejectsEight = acceptsEightRaw === false;
+    const requiresFour = c.fourMonthRequired === true;
+    const requiresEight = c.eightMonthRequired === true;
+    const explicitFourOnly = requiresFour || (acceptsFour && rejectsEight) || c.workTermLength === 4;
+    const explicitEightOnly = requiresEight || (acceptsEight && rejectsFour) || c.workTermLength === 8;
 
     if (pref === "either") {
       return { eligible: true, reason: "Either term length accepted by user preference." };
     }
 
     if (pref === "4") {
-      if (acceptsFour) {
+      if (explicitEightOnly) {
+        return { eligible: false, reason: "Posting appears to be 8-month only." };
+      }
+      if (acceptsFour || c.workTermLength === 4) {
         if (c.eightMonthPreferred && acceptsFour) {
           return { eligible: true, reason: "8-month preferred but still accepts 4-month terms." };
         }
         return { eligible: true, reason: "Posting accepts 4-month term." };
       }
-      return { eligible: false, reason: "Posting does not indicate 4-month eligibility." };
+      // WaterlooWorks postings often omit explicit duration and default to one work term (4 months).
+      // Treat unknown duration as eligible unless the posting explicitly contradicts 4-month.
+      return { eligible: true, reason: "No explicit duration found; keeping posting unless it contradicts 4-month." };
     }
 
     if (pref === "8") {
-      if (acceptsEight) {
+      if (explicitFourOnly) {
+        return { eligible: false, reason: "Posting appears to be 4-month only." };
+      }
+      if (acceptsEight || c.workTermLength === 8) {
         if (c.fourMonthPreferred && acceptsEight) {
           return { eligible: true, reason: "4-month preferred but still accepts 8-month terms." };
         }
@@ -495,6 +512,25 @@
       } else {
         out.push(entry);
       }
+    });
+
+    return {
+      filtered: out,
+      hiddenCount
+    };
+  }
+
+  function applyHardDisqualifierFilter(entries) {
+    const out = [];
+    let hiddenCount = 0;
+
+    entries.forEach((entry) => {
+      const hideRow = !!entry.hardDisqualifier;
+      if (entry.job && entry.job.row) {
+        entry.job.row.classList.toggle("wwp-row-hidden-by-hard-filter", hideRow);
+      }
+      if (hideRow) hiddenCount += 1;
+      else out.push(entry);
     });
 
     return {
@@ -1004,7 +1040,7 @@
     hideToggleWrap.className = "wwp-check";
     const hideToggle = document.createElement("input");
     hideToggle.type = "checkbox";
-    hideToggle.checked = true;
+    hideToggle.checked = false;
     const hideToggleText = document.createElement("span");
     hideToggleText.textContent = "Only show matched rows";
     hideToggleWrap.append(hideToggle, hideToggleText);
@@ -1019,6 +1055,7 @@
     const resultsWrap = document.createElement("div");
     resultsWrap.className = "wwp-search-results";
     card.appendChild(resultsWrap);
+    let queryModeActive = false;
 
     function renderResults(displayResults, queryCtx) {
       resultsWrap.innerHTML = "";
@@ -1055,8 +1092,12 @@
       });
     }
 
-    function runSearch() {
-      const query = queryInput.value.trim();
+    function runSearch(options) {
+      const opts = options || {};
+      if (opts.activateQuery === true) {
+        queryModeActive = true;
+      }
+      const query = queryModeActive ? queryInput.value.trim() : "";
       const computed = computeSmartSearchResults(scoredJobs, query, settings);
       const baseResults = computed.results;
       const shouldFilter = !!hideToggle.checked && computed.queryCtx.hasQuery;
@@ -1093,21 +1134,22 @@
       renderResults(displayResults, computed.queryCtx);
     }
 
-    runBtn.addEventListener("click", runSearch);
     queryInput.addEventListener("keydown", (event) => {
       if (event.key === "Enter") {
         event.preventDefault();
-        runSearch();
+        runSearch({ activateQuery: true });
       }
     });
-    hideToggle.addEventListener("change", runSearch);
+    runBtn.addEventListener("click", () => runSearch({ activateQuery: true }));
+    hideToggle.addEventListener("change", () => runSearch());
 
     targetRoleBtn.addEventListener("click", () => {
       queryInput.value = String(settings.preferences.targetRole || "").trim();
-      runSearch();
+      runSearch({ activateQuery: true });
     });
 
     clearBtn.addEventListener("click", () => {
+      queryModeActive = false;
       queryInput.value = "";
       runSearch();
     });
@@ -1399,13 +1441,15 @@
     }
 
     const termFiltered = applyStrictPreferredTermFilter(scoredJobs, gate.settings.preferences.preferredTermLength);
-    const eligibleJobs = termFiltered.filtered;
+    const hardFiltered = applyHardDisqualifierFilter(termFiltered.filtered);
+    const eligibleJobs = hardFiltered.filtered;
 
     if (!eligibleJobs.length) {
       const noneCard = ns.makeCard("Term-Length Filter");
-      noneCard.innerHTML += `<p class="wwp-inline-note">No postings match your strict term-length preference (${gate.settings.preferences.preferredTermLength}-month). Try changing to "Either" to see all postings.</p>`;
+      noneCard.innerHTML += `<p class="wwp-inline-note">No postings remain after strict filters (term-length + auto-reject eligibility rules).</p>`;
+      noneCard.innerHTML += `<p class="wwp-inline-note">Try changing term-length to "Either" or updating work term / profile preferences.</p>`;
       tabs.appendToTab("overview", noneCard);
-      panel.setSubtitle("No jobs match preferred term length");
+      panel.setSubtitle("No jobs after strict eligibility filters");
       return;
     }
 
@@ -1439,6 +1483,9 @@
     termFilterCard.innerHTML += `<p class="wwp-inline-note">Preference: <strong>${prefLabel}</strong>. Showing ${eligibleJobs.length} of ${scoredJobs.length} analyzed rows.</p>`;
     if (termFiltered.hiddenCount > 0 && gate.settings.preferences.preferredTermLength !== "either") {
       termFilterCard.innerHTML += `<p class="wwp-inline-note">${termFiltered.hiddenCount} rows were hidden because they did not explicitly match your selected term-length rule.</p>`;
+    }
+    if (hardFiltered.hiddenCount > 0) {
+      termFilterCard.innerHTML += `<p class="wwp-inline-note">${hardFiltered.hiddenCount} rows were auto-rejected due to hard eligibility constraints (e.g., Master's/PhD, work-term/year minimums).</p>`;
     }
 
     tabs.appendToTab("overview", termFilterCard);

@@ -39,6 +39,11 @@
     if (constraints.gpaRequirement) chips.push({ text: constraints.gpaRequirement, tone: "danger" });
     if (constraints.firstYearCompletion) chips.push({ text: "First-year completion", tone: "" });
     if (constraints.termRestriction) chips.push({ text: constraints.termRestriction, tone: "danger" });
+    if (Number.isFinite(constraints.minWorkTerm)) chips.push({ text: `Min work term ${constraints.minWorkTerm}`, tone: "danger" });
+    if (Array.isArray(constraints.allowedWorkTerms) && constraints.allowedWorkTerms.length) {
+      chips.push({ text: `Eligible terms: ${constraints.allowedWorkTerms.join(", ")}`, tone: "danger" });
+    }
+    if (Number.isFinite(constraints.minAcademicYear)) chips.push({ text: `Min year ${constraints.minAcademicYear}+`, tone: "danger" });
     if (constraints.mastersRequired) chips.push({ text: "Master's enrollment required", tone: "danger" });
     if (constraints.phdRequired) chips.push({ text: "PhD enrollment required", tone: "danger" });
     if (constraints.graduateOnly) chips.push({ text: "Graduate students only", tone: "danger" });

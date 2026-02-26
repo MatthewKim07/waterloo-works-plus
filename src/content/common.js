@@ -126,6 +126,11 @@
     if (constraints.gpaRequirement) flags.push(`GPA req: ${constraints.gpaRequirement}`);
     if (constraints.firstYearCompletion) flags.push("First-year completion");
     if (constraints.termRestriction) flags.push("Term restriction");
+    if (Number.isFinite(constraints.minWorkTerm)) flags.push(`Min work term ${constraints.minWorkTerm}`);
+    if (Array.isArray(constraints.allowedWorkTerms) && constraints.allowedWorkTerms.length) {
+      flags.push(`Eligible terms: ${constraints.allowedWorkTerms.join(", ")}`);
+    }
+    if (Number.isFinite(constraints.minAcademicYear)) flags.push(`Min year ${constraints.minAcademicYear}`);
     if (constraints.mastersRequired) flags.push("Master's enrollment required");
     if (constraints.phdRequired) flags.push("PhD enrollment required");
     if (constraints.graduateOnly) flags.push("Graduate students only");
@@ -152,6 +157,8 @@
   ns.detectHardDisqualifier = function detectHardDisqualifier(constraints, settings) {
     const c = constraints || {};
     const profile = inferUserAcademicProfile(settings || {});
+    const userTerm = Math.max(1, Number((settings && settings.preferences && settings.preferences.workTerm) || 1));
+    const userAcademicYear = Math.ceil(userTerm / 2);
     const reasons = [];
 
     if (c.phdRequired && !profile.isPhd) {
@@ -162,6 +169,15 @@
     }
     if (c.graduateOnly && !profile.isGraduate) {
       reasons.push("Posting is restricted to graduate students.");
+    }
+    if (Number.isFinite(c.minWorkTerm) && userTerm < Number(c.minWorkTerm)) {
+      reasons.push(`Posting requires work term ${c.minWorkTerm}+.`);
+    }
+    if (Array.isArray(c.allowedWorkTerms) && c.allowedWorkTerms.length && !c.allowedWorkTerms.includes(userTerm)) {
+      reasons.push(`Posting is restricted to work term ${c.allowedWorkTerms.join(", ")}.`);
+    }
+    if (Number.isFinite(c.minAcademicYear) && userAcademicYear < Number(c.minAcademicYear)) {
+      reasons.push(`Posting requires year ${c.minAcademicYear}+ standing.`);
     }
 
     return {
