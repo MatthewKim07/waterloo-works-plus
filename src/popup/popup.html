@@ -9,18 +9,21 @@
     <link rel="stylesheet" href="./popup.css" />
   </head>
   <body>
-    <main>
-      <h1>WaterlooWorks+</h1>
+    <main class="popup-shell">
+      <header class="brand">
+        <img src="../assets/icons/icon-48.png" alt="" class="brand-mark" />
+        <div>
+          <h1>WaterlooWorks+</h1>
+          <p class="subtitle">Quick controls</p>
+        </div>
+      </header>
 
-      <label class="row">
-        <input id="enabledToggle" type="checkbox" />
-        <span>Extension enabled</span>
-      </label>
+      <section class="controls">
+        <button id="toggleExtensionBtn" type="button">Disable extension</button>
+        <button id="openAppBtn" type="button" class="secondary">Open WaterlooWorks+ App</button>
+      </section>
 
-      <button id="toggleExtensionBtn" type="button">Disable extension</button>
-      <button id="openAppBtn" type="button" class="secondary">Open WaterlooWorks+ App</button>
-
-      <p id="status"></p>
+      <p id="status" role="status" aria-live="polite"></p>
     </main>
 
     <script src="../shared/storage.js"></script>

@@ -9,7 +9,7 @@
     const node = byId("status");
     if (!node) return;
     node.textContent = text;
-    node.style.color = isError ? "#b91c1c" : "#475569";
+    node.style.color = isError ? "#fca5a5" : "#9fb9ea";
   }
 
   function setToggleButtonLabel(enabled) {
@@ -21,21 +21,8 @@
   async function wire() {
     const settings = await ns.getSettings();
     const enabled = !!settings.enabled;
-    const enabledToggle = byId("enabledToggle");
-    if (enabledToggle) {
-      enabledToggle.checked = enabled;
-    }
     setToggleButtonLabel(enabled);
-
-    if (enabledToggle) {
-      enabledToggle.addEventListener("change", async (event) => {
-        const current = await ns.getSettings();
-        current.enabled = !!event.target.checked;
-        await ns.saveSettings(current);
-        setToggleButtonLabel(current.enabled);
-        setStatus(current.enabled ? "Extension enabled." : "Extension disabled.");
-      });
-    }
+    setStatus(enabled ? "Extension enabled." : "Extension disabled.", false);
 
     const toggleBtn = byId("toggleExtensionBtn");
     if (toggleBtn) {
@@ -43,7 +30,6 @@
         const current = await ns.getSettings();
         current.enabled = !current.enabled;
         await ns.saveSettings(current);
-        if (enabledToggle) enabledToggle.checked = current.enabled;
         setToggleButtonLabel(current.enabled);
         setStatus(current.enabled ? "Extension enabled." : "Extension disabled.");
       });
