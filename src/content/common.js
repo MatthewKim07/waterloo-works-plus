@@ -64,21 +64,24 @@
 
   ns.getSettingsForPage = async function getSettingsForPage() {
     const settings = await ns.getSettings();
-    const disabled = !settings.enabled || settings.disabledPaths.includes(location.pathname);
+    const disabled = !settings.enabled;
     return {
       settings,
       disabled
     };
   };
 
+  ns.setExtensionEnabled = async function setExtensionEnabled(enabled) {
+    const settings = await ns.getSettings();
+    settings.enabled = !!enabled;
+    await ns.saveSettings(settings);
+    return settings.enabled;
+  };
+
   ns.disableCurrentPage = async function disableCurrentPage() {
-    const disabled = await ns.togglePageDisabled(location.pathname);
-    if (disabled) {
-      alert("WaterlooWorks+ is now disabled on this page. Refresh to hide overlays.");
-    } else {
-      alert("WaterlooWorks+ is now enabled on this page. Refresh to apply insights.");
-    }
-    return disabled;
+    await ns.setExtensionEnabled(false);
+    alert("WaterlooWorks+ extension is now disabled. Refresh to hide overlays.");
+    return true;
   };
 
   ns.fetchJobHtml = async function fetchJobHtml(url) {

@@ -266,7 +266,7 @@
     if (typeof options.onDisablePage === "function") {
       const disableBtn = document.createElement("button");
       disableBtn.className = "wwp-button";
-      disableBtn.textContent = "Disable on this page";
+      disableBtn.textContent = options.disableButtonText || "Disable extension";
       disableBtn.addEventListener("click", () => options.onDisablePage());
       actions.prepend(disableBtn);
     }
