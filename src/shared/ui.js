@@ -210,22 +210,39 @@
     const launcher = document.createElement("button");
     launcher.id = launcherId;
     launcher.type = "button";
-    launcher.textContent = options.launcherText || "WW+";
-    launcher.title = "Open WaterlooWorks+";
+    launcher.textContent = "";
+    launcher.setAttribute("aria-label", "Open WaterlooWorks+");
+    launcher.title = "";
     launcher.style.position = "fixed";
     launcher.style.right = options.launcherRight || "14px";
     launcher.style.bottom = options.launcherBottom || "18px";
     launcher.style.zIndex = "2147483645";
-    launcher.style.width = "42px";
-    launcher.style.height = "42px";
+    launcher.style.width = "48px";
+    launcher.style.height = "48px";
     launcher.style.borderRadius = "999px";
-    launcher.style.border = "1px solid #1e3a8a";
-    launcher.style.background = "linear-gradient(135deg, #1d4ed8, #1e40af)";
-    launcher.style.color = "#eff6ff";
-    launcher.style.font = "700 11px/1 -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
+    launcher.style.border = "1px solid rgba(30, 58, 138, 0.65)";
+    launcher.style.background = "radial-gradient(circle at 30% 30%, #172554, #0f172a)";
     launcher.style.cursor = "pointer";
     launcher.style.boxShadow = "0 10px 24px rgba(2, 6, 23, 0.35)";
+    launcher.style.display = "grid";
+    launcher.style.placeItems = "center";
+    launcher.style.padding = "0";
     launcher.style.display = "none";
+
+    const launcherLogo = document.createElement("img");
+    launcherLogo.src = chrome.runtime.getURL("src/assets/icons/icon-48.png");
+    launcherLogo.alt = "";
+    launcherLogo.style.width = "28px";
+    launcherLogo.style.height = "28px";
+    launcherLogo.style.objectFit = "contain";
+    launcherLogo.style.pointerEvents = "none";
+    launcherLogo.addEventListener("error", () => {
+      launcher.innerHTML = "";
+      launcher.textContent = options.launcherText || "WW+";
+      launcher.style.color = "#eff6ff";
+      launcher.style.font = "700 11px/1 -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
+    });
+    launcher.appendChild(launcherLogo);
 
     function showPanel() {
       host.style.display = "block";
@@ -234,7 +251,7 @@
 
     function hidePanel() {
       host.style.display = "none";
-      launcher.style.display = "block";
+      launcher.style.display = "grid";
       if (typeof options.onClose === "function") {
         options.onClose();
       }

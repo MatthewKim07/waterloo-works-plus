@@ -50,5 +50,20 @@
       ],
       "run_at": "document_idle"
     }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "src/assets/icons/icon-16.png",
+        "src/assets/icons/icon-32.png",
+        "src/assets/icons/icon-48.png",
+        "src/assets/icons/icon-128.png",
+        "src/assets/icons/logo.png"
+      ],
+      "matches": [
+        "*://waterlooworks.uwaterloo.ca/*",
+        "*://*.waterlooworks.uwaterloo.ca/*"
+      ]
+    }
   ]
 }
