@@ -35,6 +35,92 @@
     return ns.unique(found);
   }
 
+  const SKILL_SECTION_HEADING_REGEX =
+    /\b(skills?\s*(?:and|&)?\s*experience|technical skills?|qualifications?|requirements?|what you(?:'|’)ll bring|what we(?:'|’)re looking for|must[- ]?have|minimum qualifications?)\b/i;
+  const SOFT_PREFERENCE_CUE_REGEX = /\b(preferred|preferable|asset|nice to have|bonus|plus|would be an asset|considered an asset)\b/i;
+  const HARD_REQUIREMENT_CUE_REGEX =
+    /\b(required|must|mandatory|minimum qualification|proficiency|strong proficiency|experience with|familiarity with|knowledge of|understanding of|ability to|hands[- ]on|competenc(?:y|ies)|expertise in)\b/i;
+
+  function collectDirectListItemTexts(node) {
+    if (!node) return [];
+    const selector = ":scope > ul > li, :scope > ol > li";
+    const items = Array.from(node.querySelectorAll(selector))
+      .map((li) => ns.normalizeText(li.textContent || ""))
+      .filter((text) => text.length >= 12);
+    return ns.unique(items);
+  }
+
+  function collectNeighborListItemTexts(headingNode) {
+    const lines = [];
+    if (!headingNode) return lines;
+
+    let cursor = headingNode.nextElementSibling;
+    let steps = 0;
+    while (cursor && steps < 6) {
+      const nodeText = ns.normalizeText(cursor.textContent || "");
+      if (steps > 0 && SKILL_SECTION_HEADING_REGEX.test(nodeText) && nodeText.length <= 140) {
+        break;
+      }
+
+      const direct = collectDirectListItemTexts(cursor);
+      if (direct.length) lines.push(...direct);
+
+      if (cursor.matches && cursor.matches("li")) {
+        const liText = ns.normalizeText(cursor.textContent || "");
+        if (liText.length >= 12) lines.push(liText);
+      }
+
+      cursor = cursor.nextElementSibling;
+      steps += 1;
+    }
+
+    return ns.unique(lines);
+  }
+
+  function extractSkillBulletsFromHeadingSections(postingRoot) {
+    if (!postingRoot || !postingRoot.querySelectorAll) return [];
+    const candidates = Array.from(postingRoot.querySelectorAll("h1,h2,h3,h4,h5,strong,b,p,div,span,td,th,label"));
+    const bullets = [];
+
+    for (const node of candidates) {
+      const headingText = ns.normalizeText(node.textContent || "");
+      if (!headingText || headingText.length > 160) continue;
+      if (!SKILL_SECTION_HEADING_REGEX.test(headingText)) continue;
+
+      bullets.push(...collectDirectListItemTexts(node.parentElement));
+      bullets.push(...collectNeighborListItemTexts(node));
+    }
+
+    return ns.unique(
+      bullets.filter((line) => {
+        if (!line || line.length < 12) return false;
+        if (SOFT_PREFERENCE_CUE_REGEX.test(line) && !HARD_REQUIREMENT_CUE_REGEX.test(line)) return false;
+        return extractSkillsFromSentences([line]).length > 0;
+      })
+    );
+  }
+
+  function getImplicitSkillSentences(sentences, mode) {
+    const source = Array.isArray(sentences) ? sentences : [];
+    return source.filter((sentence) => {
+      const line = String(sentence || "");
+      if (!line) return false;
+      const hasSkillAlias = extractSkillsFromSentences([line]).length > 0;
+      if (!hasSkillAlias) return false;
+
+      if (mode === "required") {
+        if (SOFT_PREFERENCE_CUE_REGEX.test(line) && !HARD_REQUIREMENT_CUE_REGEX.test(line)) return false;
+        return HARD_REQUIREMENT_CUE_REGEX.test(line);
+      }
+
+      if (mode === "preferred") {
+        return SOFT_PREFERENCE_CUE_REGEX.test(line);
+      }
+
+      return false;
+    });
+  }
+
   function detectConstraintValue(text, regex) {
     const match = text.match(regex);
     return match ? match[0].trim() : null;
@@ -245,11 +331,24 @@
     const requiredKeywords = ["required", "must", "minimum qualification", "qualification", "need to", "mandatory"];
     const preferredKeywords = ["preferred", "nice to have", "asset", "bonus", "would be an asset"];
 
-    const requiredSentences = sentences.filter((s) => sentenceHasKeyword(s, requiredKeywords));
-    const preferredSentences = sentences.filter((s) => sentenceHasKeyword(s, preferredKeywords));
+    const requiredSentencesByKeyword = sentences.filter((s) => sentenceHasKeyword(s, requiredKeywords));
+    const preferredSentencesByKeyword = sentences.filter((s) => sentenceHasKeyword(s, preferredKeywords));
+    const implicitRequiredSentences = getImplicitSkillSentences(sentences, "required");
+    const implicitPreferredSentences = getImplicitSkillSentences(sentences, "preferred");
+    const sectionSkillBullets = extractSkillBulletsFromHeadingSections(postingRoot);
+
+    const requiredSentences = ns.unique([
+      ...requiredSentencesByKeyword,
+      ...implicitRequiredSentences,
+      ...sectionSkillBullets
+    ]);
+    const requiredSet = new Set(requiredSentences);
+    const preferredSentences = ns
+      .unique([...preferredSentencesByKeyword, ...implicitPreferredSentences])
+      .filter((line) => !requiredSet.has(line));
 
     const requiredSkills = extractSkillsFromSentences(requiredSentences);
-    const preferredSkills = extractSkillsFromSentences(preferredSentences);
+    const preferredSkills = extractSkillsFromSentences(preferredSentences).filter((skill) => !requiredSkills.includes(skill));
 
     const lowerText = fullText.toLowerCase();
 
@@ -352,6 +451,11 @@
       preferredSkills,
       constraints,
       summaryBullets,
+      extractionMeta: {
+        requiredSentenceCount: requiredSentences.length,
+        preferredSentenceCount: preferredSentences.length,
+        sectionSkillBulletCount: sectionSkillBullets.length
+      },
       fullText
     };
   };

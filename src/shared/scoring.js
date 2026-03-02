@@ -7,7 +7,7 @@
     if (skills && typeof skills === "object") {
       for (const [k, v] of Object.entries(skills)) {
         const n = Number(v);
-        if (Number.isFinite(n)) map.set(k, n);
+        if (Number.isFinite(n) && n > 0) map.set(k, 1);
       }
     }
     return map;
@@ -30,33 +30,87 @@
     return hits;
   }
 
+  function getCategoryMultiplier(entry) {
+    const category = String((entry && entry.category) || "").toLowerCase();
+    if (!category) return 1;
+    if (category === "soft-skill") return 0.55;
+    if (category === "process") return 0.5;
+    if (category === "domain") return 0.75;
+    return 1;
+  }
+
+  function deriveMentionWeightsFromText(text) {
+    const lower = String(text || "").toLowerCase();
+    const mentionWeights = new Map();
+    if (!lower.trim()) return mentionWeights;
+
+    for (const entry of ns.SKILLS_DICTIONARY || []) {
+      const key = String(entry && entry.key ? entry.key : "").trim();
+      if (!key) continue;
+
+      const aliases = ns.unique([key, ...((entry && entry.aliases) || [])]);
+      const hits = countAliasHits(lower, aliases);
+      if (hits <= 0) continue;
+
+      const baseWeight = Number(entry.baseWeight || 1);
+      const categoryFactor = getCategoryMultiplier(entry);
+      const mentionWeight = (0.75 + Math.min(2.4, hits * 0.42)) * baseWeight * categoryFactor;
+      mentionWeights.set(key, Number(mentionWeight.toFixed(3)));
+    }
+
+    return mentionWeights;
+  }
+
+  function isTechnicalRequiredSkill(skillKey) {
+    const entry = findSkillEntryByKey(skillKey);
+    const category = String((entry && entry.category) || "").toLowerCase();
+    return category !== "soft-skill" && category !== "process";
+  }
+
   ns.computeSkillMatch = function computeSkillMatch(resumeSkills, jobRequired, jobPreferred, fullText) {
     const resumeMap = asSkillMap(resumeSkills);
     const required = ns.unique(jobRequired || []);
     const preferred = ns.unique(jobPreferred || []);
+    const fullTextValue = String(fullText || "");
 
     const jobWeights = new Map();
 
     for (const key of required) {
-      jobWeights.set(key, (jobWeights.get(key) || 0) + 3.0);
+      const entry = findSkillEntryByKey(key);
+      const categoryFactor = getCategoryMultiplier(entry);
+      jobWeights.set(key, (jobWeights.get(key) || 0) + 4.2 * categoryFactor);
     }
 
     for (const key of preferred) {
-      jobWeights.set(key, (jobWeights.get(key) || 0) + 1.5);
+      const entry = findSkillEntryByKey(key);
+      const categoryFactor = getCategoryMultiplier(entry);
+      jobWeights.set(key, (jobWeights.get(key) || 0) + 2.0 * categoryFactor);
     }
 
-    const text = String(fullText || "");
+    const mentionWeights = deriveMentionWeightsFromText(fullTextValue);
+
     for (const [key, weight] of Array.from(jobWeights.entries())) {
       const entry = findSkillEntryByKey(key);
       if (!entry) continue;
-      const hits = countAliasHits(text, entry.aliases || [key]);
-      jobWeights.set(key, weight + Math.min(2, hits * 0.2));
+      const aliases = ns.unique([key, ...((entry && entry.aliases) || [])]);
+      const hits = countAliasHits(fullTextValue, aliases);
+      jobWeights.set(key, weight + Math.min(2.4, hits * 0.28));
+    }
+
+    for (const [key, mentionWeight] of mentionWeights.entries()) {
+      const existing = jobWeights.get(key) || 0;
+      if (existing > 0) {
+        jobWeights.set(key, existing + Math.min(1.6, mentionWeight * 0.35));
+      } else {
+        // Keep full-text inferred skills lighter than explicit required/preferred tags.
+        jobWeights.set(key, Math.min(2.6, mentionWeight));
+      }
     }
 
     if (jobWeights.size === 0) {
       let overlap = 0;
       for (const [skill] of resumeMap.entries()) {
-        if (text.toLowerCase().includes(skill.toLowerCase())) {
+        if (fullTextValue.toLowerCase().includes(skill.toLowerCase())) {
           overlap += 1;
         }
       }
@@ -68,14 +122,27 @@
 
     for (const [skill, weight] of jobWeights.entries()) {
       total += weight;
-      const resumeWeight = resumeMap.get(skill) || 0;
-      if (resumeWeight > 0) {
-        achieved += weight * Math.min(1, 0.4 + resumeWeight / 6);
+      if ((resumeMap.get(skill) || 0) > 0) {
+        achieved += weight;
       }
     }
 
     if (total <= 0) return 0;
-    return ns.clamp(Math.round((achieved / total) * 100), 0, 100);
+    let score = (achieved / total) * 100;
+
+    // When explicit technical required skills are present, coverage should drive score more strongly.
+    const technicalRequired = required.filter((skill) => isTechnicalRequiredSkill(skill));
+    if (technicalRequired.length >= 3) {
+      const matchedRequired = technicalRequired.filter((skill) => (resumeMap.get(skill) || 0) > 0).length;
+      const requiredCoverage = matchedRequired / technicalRequired.length;
+      if (requiredCoverage >= 0.75) {
+        score = Math.max(score, 42 + requiredCoverage * 52);
+      } else if (requiredCoverage >= 0.55) {
+        score = Math.max(score, 30 + requiredCoverage * 46);
+      }
+    }
+
+    return ns.clamp(Math.round(score), 0, 100);
   };
 
   function parseTermFromLabel(label) {

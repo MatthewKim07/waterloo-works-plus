@@ -5,6 +5,7 @@
     settings: "wwpSettings",
     jobCache: "wwpJobAnalysisCache"
   };
+  const JOB_CACHE_SCHEMA_VERSION = 2;
 
   const DEFAULT_SETTINGS = {
     enabled: true,
@@ -134,8 +135,8 @@
     for (const [key, value] of Object.entries(parsedData)) {
       const skill = typeof key === "string" ? key.trim() : "";
       if (!skill || excludedSet.has(skill.toLowerCase())) continue;
-      if (Number.isFinite(Number(value))) {
-        map.set(skill, Number(value));
+      if (Number.isFinite(Number(value)) && Number(value) > 0) {
+        map.set(skill, 1);
       }
     }
 
@@ -144,8 +145,7 @@
       if (!skill) continue;
       const manualWeight = Number(value);
       if (!Number.isFinite(manualWeight) || manualWeight <= 0) continue;
-      const existing = map.get(skill) || 0;
-      map.set(skill, Math.max(existing, manualWeight));
+      map.set(skill, 1);
       if (excludedSet.has(skill.toLowerCase())) {
         excludedSet.delete(skill.toLowerCase());
       }
@@ -169,7 +169,7 @@
     const result = await getLocalStorage([STORAGE_KEYS.jobCache]);
     const cache = result[STORAGE_KEYS.jobCache] || {};
     const item = cache[url];
-    if (!item || !item.timestamp) {
+    if (!item || !item.timestamp || item.version !== JOB_CACHE_SCHEMA_VERSION) {
       return null;
     }
     if (Date.now() - item.timestamp > limit) {
@@ -182,6 +182,7 @@
     const result = await getLocalStorage([STORAGE_KEYS.jobCache]);
     const cache = result[STORAGE_KEYS.jobCache] || {};
     cache[url] = {
+      version: JOB_CACHE_SCHEMA_VERSION,
       timestamp: Date.now(),
       data
     };

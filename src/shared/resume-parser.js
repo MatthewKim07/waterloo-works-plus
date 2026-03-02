@@ -15,6 +15,10 @@
     return new Map(Array.from(map.entries()).sort((a, b) => b[1] - a[1]));
   }
 
+  function sortMapByKey(map) {
+    return new Map(Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0])));
+  }
+
   const BROAD_SKILL_DAMPENERS = {
     "rest api": 0.62,
     "software engineering": 0.72,
@@ -271,13 +275,16 @@
 
       if (skillScore > 0) {
         const dampener = BROAD_SKILL_DAMPENERS[entry.key] || 1;
-        scores.set(entry.key, Number((skillScore * dampener).toFixed(2)));
+        const confidence = skillScore * dampener;
+        if (confidence > 0) {
+          scores.set(entry.key, 1);
+        }
       }
     }
 
     return {
       rawText,
-      skills: sortMapByValue(scores)
+      skills: sortMapByKey(scores)
     };
   };
 

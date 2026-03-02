@@ -1,7 +1,7 @@
 (function initOptionsPage(global) {
   const ns = (global.WWP = global.WWP || {});
   const FACULTY_OPTIONS = ["Engineering", "Mathematics", "Science", "Arts", "Environment", "Health"];
-  const MANUAL_SKILL_DEFAULT_WEIGHT = 8;
+  const MANUAL_SKILL_DEFAULT_WEIGHT = 1;
   let selectedResumeFile = null;
   let isParsingUpload = false;
   let skillIndexCache = null;
@@ -76,7 +76,7 @@
       const skill = String(key || "").trim();
       const weight = Number(value);
       if (!skill || !Number.isFinite(weight) || weight <= 0) continue;
-      map.set(skill, Number(weight));
+      map.set(skill, 1);
     }
     return map;
   }
@@ -336,10 +336,6 @@
     return normalized;
   }
 
-  function formatSkillWeight(value) {
-    return Number.isFinite(Number(value)) ? Math.round(Number(value) * 10) / 10 : 0;
-  }
-
   function makeSkillChip(skill, value, options) {
     const opts = options || {};
     const chip = document.createElement("button");
@@ -364,9 +360,8 @@
       chip.dataset.skill = skill;
     }
 
-    const valueLabel = Number.isFinite(Number(value)) ? ` (${formatSkillWeight(value)})` : "";
     const suffix = opts.suffix ? ` ${opts.suffix}` : "";
-    chip.textContent = `${skill}${valueLabel}${suffix}`;
+    chip.textContent = `${skill}${suffix}`;
     if (opts.ariaLabel) {
       chip.setAttribute("aria-label", opts.ariaLabel);
       chip.title = opts.ariaLabel;
@@ -383,7 +378,9 @@
     const manualMap = parseSkillObject(settings && settings.manualSkills);
     const activeMap = ns.getResumeSkillMap(settings);
     const excluded = getExcludedSet(settings);
-    const entries = Array.from(activeMap.entries()).sort((a, b) => b[1] - a[1]).slice(0, 120);
+    const entries = Array.from(activeMap.entries())
+      .sort((a, b) => String(a[0]).localeCompare(String(b[0])))
+      .slice(0, 120);
 
     if (!entries.length) {
       container.innerHTML = '<span class="status">No active skills yet. Parse a resume or add a manual skill.</span>';
@@ -423,7 +420,7 @@
     const excluded = getExcludedSet(settings);
     const entries = Array.from(parsedMap.entries())
       .filter(([skill]) => excluded.has(String(skill || "").toLowerCase()))
-      .sort((a, b) => b[1] - a[1]);
+      .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
 
     if (!entries.length) {
       container.innerHTML = '<span class="status">No hidden parsed skills.</span>';
@@ -511,7 +508,7 @@
     settings.manualSkills = settings.manualSkills && typeof settings.manualSkills === "object" ? settings.manualSkills : {};
 
     const existing = Number(settings.manualSkills[skill]);
-    settings.manualSkills[skill] = Number.isFinite(existing) && existing > 0 ? Math.max(existing, MANUAL_SKILL_DEFAULT_WEIGHT) : MANUAL_SKILL_DEFAULT_WEIGHT;
+    settings.manualSkills[skill] = Number.isFinite(existing) && existing > 0 ? 1 : MANUAL_SKILL_DEFAULT_WEIGHT;
 
     const excluded = getExcludedSet(settings);
     if (excluded.has(skill.toLowerCase())) {

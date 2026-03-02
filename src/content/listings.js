@@ -550,17 +550,18 @@
   function computeResumeTextMatch(resumeSkills, text, targetRole) {
     const normalizedText = String(text || "").toLowerCase();
     const entries = Array.from((resumeSkills || new Map()).entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 50);
+      .map(([skill]) => String(skill || "").trim())
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b))
+      .slice(0, 120);
 
     if (!entries.length || !normalizedText) return 0;
 
-    let totalWeight = 0;
-    let matchedWeight = 0;
+    let totalCount = 0;
+    let matchedCount = 0;
 
-    for (const [skill, rawWeight] of entries) {
-      const weight = Math.min(4, Math.max(0.4, Number(rawWeight) || 0.4));
-      totalWeight += weight;
+    for (const skill of entries) {
+      totalCount += 1;
 
       const entry = findSkillEntry(skill);
       const aliases = entry && Array.isArray(entry.aliases) ? [skill, ...entry.aliases] : [skill];
@@ -574,13 +575,11 @@
         hits += count;
       }
 
-      if (hits > 0) {
-        matchedWeight += weight * Math.min(1.2, 0.5 + hits * 0.3);
-      }
+      if (hits > 0) matchedCount += 1;
     }
 
-    if (totalWeight <= 0) return 0;
-    let score = (matchedWeight / totalWeight) * 100;
+    if (totalCount <= 0) return 0;
+    let score = (matchedCount / totalCount) * 100;
 
     const role = String(targetRole || "").trim().toLowerCase();
     if (role && normalizedText.includes(role)) {
@@ -592,6 +591,39 @@
     }
 
     return Math.max(0, Math.min(100, Math.round(score)));
+  }
+
+  function computeBlendedSkillMatch(baseSkillMatch, keywordSkillMatch, parsed) {
+    const base = ns.clamp(Number(baseSkillMatch) || 0, 0, 100);
+    const keyword = ns.clamp(Number(keywordSkillMatch) || 0, 0, 100);
+    const requiredCount = Array.isArray(parsed && parsed.requiredSkills) ? parsed.requiredSkills.length : 0;
+    const preferredCount = Array.isArray(parsed && parsed.preferredSkills) ? parsed.preferredSkills.length : 0;
+    const extractionMeta = (parsed && parsed.extractionMeta) || {};
+    const sectionBullets = Number(extractionMeta.sectionSkillBulletCount) || 0;
+    const structuredSignals = requiredCount + preferredCount;
+
+    let blended = 0;
+    if (structuredSignals >= 6 || (requiredCount >= 4 && sectionBullets >= 3)) {
+      blended = Math.round(base * 0.88 + keyword * 0.12);
+    } else if (structuredSignals >= 3) {
+      blended = Math.round(base * 0.78 + keyword * 0.22);
+    } else {
+      blended = Math.round(base * 0.55 + keyword * 0.45);
+    }
+
+    if (base >= 75) {
+      blended = Math.max(blended, Math.round(base * 0.94));
+    } else if (base >= 60) {
+      blended = Math.max(blended, Math.round(base * 0.88));
+    } else if (base >= 45) {
+      blended = Math.max(blended, Math.round(base * 0.82));
+    }
+
+    if (base <= 6 && keyword > 0) {
+      blended = Math.max(blended, Math.round(keyword * 0.8));
+    }
+
+    return ns.clamp(blended, 0, 100);
   }
 
   async function analyzeJobs(jobs, settings, panel) {
@@ -632,14 +664,7 @@
       const baseSkillMatch = ns.computeSkillMatch(resumeSkills, parsed.requiredSkills, parsed.preferredSkills, parsed.fullText);
       const keywordSkillMatch = computeResumeTextMatch(resumeSkills, analysisText, settings.preferences.targetRole);
 
-      let skillMatch = Math.round(baseSkillMatch * 0.55 + keywordSkillMatch * 0.45);
-      if (baseSkillMatch === 0 && keywordSkillMatch > 0) {
-        skillMatch = keywordSkillMatch;
-      }
-      if (skillMatch < 20 && keywordSkillMatch >= 35) {
-        skillMatch = Math.round((skillMatch + keywordSkillMatch) / 2);
-      }
-      skillMatch = Math.max(0, Math.min(100, skillMatch));
+      const skillMatch = computeBlendedSkillMatch(baseSkillMatch, keywordSkillMatch, parsed);
 
       const termCompatibility = estimateTermCompatibilityFromConstraints(parsed.constraints, settings.preferences.workTerm);
       const facultyAlignment = 50;
