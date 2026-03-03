@@ -429,6 +429,32 @@
     }
   }
 
+  function clearAllRowAnnotations() {
+    document.querySelectorAll("tr").forEach((row) => {
+      row.classList.remove("wwp-row-selected", "wwp-row-hidden-by-smart-search", "wwp-row-hidden-by-term-filter", "wwp-row-hidden-by-hard-filter");
+      if (row.dataset && row.dataset.wwpJobKey) {
+        delete row.dataset.wwpJobKey;
+      }
+      if (row.__wwpEntry) {
+        delete row.__wwpEntry;
+      }
+    });
+  }
+
+  function computeJobSetSignature(jobs) {
+    if (!Array.isArray(jobs) || jobs.length === 0) return "";
+    const parts = jobs.map((job) => {
+      const title = cleanNoiseText(job && job.title ? job.title : "");
+      const company = cleanNoiseText(job && job.company ? job.company : "");
+      const location = cleanNoiseText(job && job.location ? job.location : "");
+      const url = String((job && job.url) || "");
+      const key = String((job && job.key) || "");
+      return `${url}|${key}|${title}|${company}|${location}`;
+    });
+    parts.sort();
+    return parts.join("||");
+  }
+
   function estimateTermCompatibilityFromConstraints(constraints, workTerm) {
     const term = Number(workTerm || 1);
     if (!constraints) return 50;
@@ -626,6 +652,97 @@
     return ns.clamp(blended, 0, 100);
   }
 
+  function analyzeParsedJob(job, parsed, resumeSkills, settings) {
+    const safeParsed = parsed || ns.parseJobPosting(job && job.snippet ? job.snippet : "");
+    const fullText = String((safeParsed && safeParsed.fullText) || "");
+    const analysisText = [job.title, job.company, job.location, job.snippet, fullText.slice(0, 2500)].join(" ");
+
+    const baseSkillMatch = ns.computeSkillMatch(
+      resumeSkills,
+      safeParsed.requiredSkills,
+      safeParsed.preferredSkills,
+      fullText
+    );
+    const keywordSkillMatch = computeResumeTextMatch(resumeSkills, analysisText, settings.preferences.targetRole);
+    const skillMatch = computeBlendedSkillMatch(baseSkillMatch, keywordSkillMatch, safeParsed);
+
+    const termCompatibility = estimateTermCompatibilityFromConstraints(safeParsed.constraints, settings.preferences.workTerm);
+    const facultyAlignment = 50;
+    const viability = ns.computeViabilityScore(skillMatch, termCompatibility, facultyAlignment, 0);
+
+    const combinedText = [job.title, job.company, job.location, job.snippet, fullText.slice(0, 1200)].join(" ");
+    const roleBoost = ns.scoreRolePreference(combinedText, settings.preferences.targetRole);
+    const industryBoost = ns.scoreIndustryPreference(combinedText, settings.preferences.industries);
+    const termLengthBoost = ns.scoreTermLengthPreference(safeParsed.constraints, settings.preferences.preferredTermLength);
+
+    const rankingScore = skillMatch * 0.62 + viability.score * 0.28 + roleBoost + industryBoost + termLengthBoost;
+    const flags = ns.getConstraintFlagLabels(safeParsed.constraints);
+    const hard = ns.detectHardDisqualifier(safeParsed.constraints, settings);
+    const rec = ns.recommendAction(viability.score, {
+      eightMonthPreferred: !!safeParsed.constraints.eightMonthPreferred,
+      userTermLength: settings.preferences.preferredTermLength,
+      highSkillMatch: skillMatch >= 70,
+      lowSkillMatch: skillMatch < 45,
+      hardDisqualifier: hard.doNotApply,
+      hardReasons: hard.reasons
+    });
+
+    return {
+      parsed: safeParsed,
+      skillMatch,
+      baseSkillMatch,
+      keywordSkillMatch,
+      viability,
+      rankingScore: hard.doNotApply ? Math.max(0, rankingScore - 60) : rankingScore,
+      requiredSkills: safeParsed.requiredSkills,
+      flags,
+      recommendation: rec,
+      hardDisqualifier: hard.doNotApply,
+      hardReasons: hard.reasons
+    };
+  }
+
+  function isElementVisible(node) {
+    if (!(node instanceof Element)) return false;
+    const style = window.getComputedStyle(node);
+    if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity || 1) <= 0.02) return false;
+    const rect = node.getBoundingClientRect();
+    return rect.width > 40 && rect.height > 80;
+  }
+
+  function looksLikePostingContent(text) {
+    const t = String(text || "").toLowerCase();
+    if (!t || t.length < 220) return false;
+    return /(skills and experience|required|preferred|job summary|job responsibilities|job posting information|application information|work term duration)/.test(
+      t
+    );
+  }
+
+  function findVisiblePostingRoot() {
+    const selectors = [
+      ".ui-dialog-content",
+      ".modal-body",
+      ".modal-content",
+      "[role='dialog']",
+      ".jobPosting",
+      ".postingDetails",
+      ".job-details",
+      "main"
+    ];
+    const candidates = [];
+    selectors.forEach((selector) => {
+      document.querySelectorAll(selector).forEach((node) => {
+        if (!isElementVisible(node)) return;
+        const text = ns.normalizeText(node.textContent || "");
+        if (!looksLikePostingContent(text)) return;
+        candidates.push({ node, textLength: text.length });
+      });
+    });
+    if (!candidates.length) return null;
+    candidates.sort((a, b) => b.textLength - a.textLength);
+    return candidates[0].node;
+  }
+
   async function analyzeJobs(jobs, settings, panel) {
     let resumeSkills = ns.getResumeSkillMap(settings);
     if ((!resumeSkills || resumeSkills.size === 0) && settings && typeof settings.resumeRawText === "string" && settings.resumeRawText.trim()) {
@@ -660,58 +777,15 @@
         parsed = ns.parseJobPosting(job.snippet || ns.getTextFromElement(job.row));
       }
 
-      const analysisText = [job.title, job.company, job.location, job.snippet, parsed.fullText.slice(0, 2500)].join(" ");
-      const baseSkillMatch = ns.computeSkillMatch(resumeSkills, parsed.requiredSkills, parsed.preferredSkills, parsed.fullText);
-      const keywordSkillMatch = computeResumeTextMatch(resumeSkills, analysisText, settings.preferences.targetRole);
-
-      const skillMatch = computeBlendedSkillMatch(baseSkillMatch, keywordSkillMatch, parsed);
-
-      const termCompatibility = estimateTermCompatibilityFromConstraints(parsed.constraints, settings.preferences.workTerm);
-      const facultyAlignment = 50;
-      const viability = ns.computeViabilityScore(skillMatch, termCompatibility, facultyAlignment, 0);
-
-      const combinedText = [job.title, job.company, job.location, job.snippet, parsed.fullText.slice(0, 1200)].join(" ");
-      const roleBoost = ns.scoreRolePreference(combinedText, settings.preferences.targetRole);
-      const industryBoost = ns.scoreIndustryPreference(combinedText, settings.preferences.industries);
-      const termLengthBoost = ns.scoreTermLengthPreference(parsed.constraints, settings.preferences.preferredTermLength);
-
-      const rankingScore =
-        skillMatch * 0.62 +
-        viability.score * 0.28 +
-        roleBoost +
-        industryBoost +
-        termLengthBoost;
-
-      const flags = ns.getConstraintFlagLabels(parsed.constraints);
-      const hard = ns.detectHardDisqualifier(parsed.constraints, settings);
-      const rec = ns.recommendAction(viability.score, {
-        eightMonthPreferred: !!parsed.constraints.eightMonthPreferred,
-        userTermLength: settings.preferences.preferredTermLength,
-        highSkillMatch: skillMatch >= 70,
-        lowSkillMatch: skillMatch < 45,
-        hardDisqualifier: hard.doNotApply,
-        hardReasons: hard.reasons
-      });
+      const analyzed = analyzeParsedJob(job, parsed, resumeSkills, settings);
 
       if (panel) {
         panel.setSubtitle(`Analyzed ${index + 1} / ${jobs.length} postings`);
       }
 
-      const adjustedRankingScore = hard.doNotApply ? Math.max(0, rankingScore - 60) : rankingScore;
-
       return {
         job,
-        parsed,
-        skillMatch,
-        baseSkillMatch,
-        keywordSkillMatch,
-        viability,
-        rankingScore: adjustedRankingScore,
-        requiredSkills: parsed.requiredSkills,
-        flags,
-        recommendation: rec,
-        hardDisqualifier: hard.doNotApply,
-        hardReasons: hard.reasons
+        ...analyzed
       };
     });
 
@@ -1296,6 +1370,34 @@
     let selectedRow = null;
     const byKey = new Map();
     const byTitle = new Map();
+    const resumeSkills = ns.getResumeSkillMap(settings);
+    let renderNonce = 0;
+    const cleanup = [];
+
+    async function refreshEntryFromVisiblePosting(entry) {
+      const root = findVisiblePostingRoot();
+      if (!root) return null;
+      const rootText = ns.normalizeText(root.textContent || "");
+      if (!looksLikePostingContent(rootText)) return null;
+
+      const contentFingerprint = rootText.slice(0, 2200);
+      if (entry && entry.__livePostingFingerprint === contentFingerprint) return null;
+
+      const parsedLive = ns.parseJobPosting(root.outerHTML || rootText);
+      if (
+        (!parsedLive.requiredSkills || parsedLive.requiredSkills.length === 0) &&
+        (!parsedLive.preferredSkills || parsedLive.preferredSkills.length === 0)
+      ) {
+        return null;
+      }
+
+      const analyzed = analyzeParsedJob(entry.job, parsedLive, resumeSkills, settings);
+      return {
+        ...entry,
+        ...analyzed,
+        __livePostingFingerprint: contentFingerprint
+      };
+    }
 
     function normalizeTitleKey(text) {
       return String(text || "")
@@ -1313,7 +1415,8 @@
       }
     });
 
-    function render(entry) {
+    function render(entry, options) {
+      const opts = options || {};
       if (!entry) return;
       if (selectedRow) selectedRow.classList.remove("wwp-row-selected");
       selectedRow = entry.job.row;
@@ -1327,6 +1430,23 @@
       if (panel && typeof panel.setSubtitle === "function") {
         panel.setSubtitle(`Selected: ${entry.job.title}`);
       }
+
+      if (opts.skipLiveRefresh) return;
+      const ticket = ++renderNonce;
+      refreshEntryFromVisiblePosting(entry)
+        .then((refreshed) => {
+          if (!refreshed) return;
+          if (ticket !== renderNonce) return;
+          if (refreshed.job && refreshed.job.key) {
+            byKey.set(refreshed.job.key, refreshed);
+          }
+          const refreshedTitleKey = normalizeTitleKey(refreshed.job && refreshed.job.title);
+          if (refreshedTitleKey) {
+            byTitle.set(refreshedTitleKey, refreshed);
+          }
+          render(refreshed, { skipLiveRefresh: true });
+        })
+        .catch((_error) => {});
     }
 
     const sorted = scoredJobs.slice().sort((a, b) => b.rankingScore - a.rankingScore);
@@ -1335,49 +1455,52 @@
     scoredJobs.forEach((entry) => {
       const row = entry.job.row;
       if (!row) return;
-      row.addEventListener(
-        "click",
-        () => {
-          render(entry);
-        },
-        { passive: true }
-      );
+      const onRowClick = () => {
+        render(entry);
+      };
+      row.addEventListener("click", onRowClick, { passive: true });
+      cleanup.push(() => row.removeEventListener("click", onRowClick));
       if (entry.job.anchor) {
-        entry.job.anchor.addEventListener(
-          "click",
-          () => {
-            render(entry);
-          },
-          { passive: true }
-        );
+        const onAnchorClick = () => {
+          render(entry);
+        };
+        entry.job.anchor.addEventListener("click", onAnchorClick, { passive: true });
+        cleanup.push(() => entry.job.anchor.removeEventListener("click", onAnchorClick));
       }
     });
 
-    document.addEventListener(
-      "click",
-      (event) => {
-        const target = event.target;
-        if (!(target instanceof Element)) return;
+    const onDocumentClick = (event) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
 
-        const row = target.closest("tr");
-        if (row && row.dataset && row.dataset.wwpJobKey && byKey.has(row.dataset.wwpJobKey)) {
-          render(byKey.get(row.dataset.wwpJobKey));
-          return;
-        }
+      const row = target.closest("tr");
+      if (row && row.dataset && row.dataset.wwpJobKey && byKey.has(row.dataset.wwpJobKey)) {
+        render(byKey.get(row.dataset.wwpJobKey));
+        return;
+      }
 
-        const heading = target.closest("h1, h2, h3, .modal-title, .ui-dialog-title");
-        if (heading) {
-          const titleKey = normalizeTitleKey(heading.textContent || "");
-          if (titleKey && byTitle.has(titleKey)) {
-            render(byTitle.get(titleKey));
-          }
+      const heading = target.closest("h1, h2, h3, .modal-title, .ui-dialog-title");
+      if (heading) {
+        const titleKey = normalizeTitleKey(heading.textContent || "");
+        if (titleKey && byTitle.has(titleKey)) {
+          render(byTitle.get(titleKey));
         }
-      },
-      true
-    );
+      }
+    };
+    document.addEventListener("click", onDocumentClick, true);
+    cleanup.push(() => document.removeEventListener("click", onDocumentClick, true));
 
     return {
-      render
+      render,
+      dispose() {
+        cleanup.forEach((fn) => {
+          try {
+            fn();
+          } catch (_error) {}
+        });
+        if (selectedRow) selectedRow.classList.remove("wwp-row-selected");
+        selectedRow = null;
+      }
     };
   }
 
@@ -1417,8 +1540,65 @@
     if (pageType !== "listings") return;
     if (!isSupportedCoopListingsPage()) return;
 
+    const prevRuntime = ns.__WWP_LISTINGS_RUNTIME;
     const gate = await ns.getSettingsForPage();
-    if (gate.disabled) return;
+    if (gate.disabled) {
+      if (prevRuntime && typeof prevRuntime.dispose === "function") {
+        prevRuntime.dispose();
+      }
+      ns.__WWP_LISTINGS_RUNTIME = null;
+      return;
+    }
+
+    if (prevRuntime && typeof prevRuntime.dispose === "function") {
+      prevRuntime.dispose();
+    }
+
+    const runtime = {
+      disposed: false,
+      selection: null,
+      observer: null,
+      pollTimer: 0,
+      mutationTimer: 0,
+      rerunTimer: 0,
+      pageClickHandler: null,
+      currentSignature: ""
+    };
+    ns.__WWP_LISTINGS_RUNTIME = runtime;
+
+    runtime.dispose = () => {
+      if (runtime.disposed) return;
+      runtime.disposed = true;
+      if (runtime.selection && typeof runtime.selection.dispose === "function") {
+        runtime.selection.dispose();
+      }
+      runtime.selection = null;
+      if (runtime.observer) {
+        runtime.observer.disconnect();
+      }
+      runtime.observer = null;
+      if (runtime.pollTimer) {
+        window.clearInterval(runtime.pollTimer);
+      }
+      runtime.pollTimer = 0;
+      if (runtime.mutationTimer) {
+        window.clearTimeout(runtime.mutationTimer);
+      }
+      runtime.mutationTimer = 0;
+      if (runtime.rerunTimer) {
+        window.clearTimeout(runtime.rerunTimer);
+      }
+      runtime.rerunTimer = 0;
+      if (runtime.pageClickHandler) {
+        document.removeEventListener("click", runtime.pageClickHandler, true);
+      }
+      runtime.pageClickHandler = null;
+      clearAllRowAnnotations();
+      const panelHost = document.getElementById("wwp-listings-panel");
+      if (panelHost) panelHost.remove();
+      const launcher = document.getElementById("wwp-listings-panel-launcher");
+      if (launcher) launcher.remove();
+    };
 
     const panel = ns.createShadowPanel({
       id: "wwp-listings-panel",
@@ -1440,11 +1620,82 @@
     );
     panel.body.appendChild(tabs.root);
 
+    const tabIds = ["overview", "selected", "search", "rankings", "flags"];
+    const clearTabs = () => {
+      tabIds.forEach((id) => tabs.clearTab(id));
+    };
+
+    function scheduleRerun(reason) {
+      if (runtime.disposed || runtime.rerunTimer) return;
+      panel.setSubtitle(`Detected listings update (${reason})... refreshing`);
+      runtime.rerunTimer = window.setTimeout(() => {
+        runtime.rerunTimer = 0;
+        if (runtime.disposed) return;
+        run().catch((error) => {
+          console.error("WaterlooWorks+ listings refresh failed", error);
+        });
+      }, 450);
+    }
+
+    function checkForListingsChange(reason) {
+      if (runtime.disposed) return;
+      const latest = findJobRows();
+      if (!latest.jobs.length) return;
+      const nextSignature = computeJobSetSignature(latest.jobs);
+      if (!nextSignature || nextSignature === runtime.currentSignature) return;
+      runtime.currentSignature = nextSignature;
+      scheduleRerun(reason);
+    }
+
+    function installRefreshWatchers(container) {
+      if (runtime.disposed) return;
+      const watchRoot = (container && container.parentElement) || container || document.body;
+      runtime.observer = new MutationObserver(() => {
+        if (runtime.disposed) return;
+        if (runtime.mutationTimer) {
+          window.clearTimeout(runtime.mutationTimer);
+        }
+        runtime.mutationTimer = window.setTimeout(() => {
+          runtime.mutationTimer = 0;
+          checkForListingsChange("table mutation");
+        }, 320);
+      });
+      runtime.observer.observe(watchRoot, { childList: true, subtree: true, characterData: true });
+
+      runtime.pollTimer = window.setInterval(() => {
+        checkForListingsChange("periodic check");
+      }, 1800);
+
+      runtime.pageClickHandler = (event) => {
+        if (runtime.disposed) return;
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        const clickable = target.closest("a, button, [role='button'], li");
+        if (!clickable) return;
+
+        const label = ns.normalizeText(clickable.textContent || "");
+        const aria = String(clickable.getAttribute("aria-label") || "").toLowerCase();
+        const cls = String(clickable.className || "").toLowerCase();
+        const looksLikePager =
+          /^\d+$/.test(label) ||
+          /(page|next|previous|pagination|pager)/.test(aria) ||
+          /(pagination|pager|page-item|page-link)/.test(cls);
+        if (!looksLikePager) return;
+
+        window.setTimeout(() => checkForListingsChange("page click"), 280);
+        window.setTimeout(() => checkForListingsChange("page click"), 1000);
+      };
+      document.addEventListener("click", runtime.pageClickHandler, true);
+    }
+
     const found = await waitForJobRows(panel, 30, 650);
     const jobs = found.jobs;
     const container = found.container;
+    runtime.currentSignature = computeJobSetSignature(jobs);
+    installRefreshWatchers(container);
 
     if (!jobs.length) {
+      clearTabs();
       const summaryCard = ns.makeCard("Status");
       summaryCard.innerHTML +=
         '<p class="wwp-inline-note">No job rows were detected in the main results container yet. Try toggling table filters or refreshing.</p>';
@@ -1454,6 +1705,8 @@
     }
 
     ensureInlineStyles();
+    clearAllRowAnnotations();
+    clearTabs();
 
     const summaryCard = ns.makeCard("Status");
     summaryCard.innerHTML += `<p class="wwp-inline-note">Found ${jobs.length} co-op job rows in the primary results table. Re-ranking by resume, constraints, and preferences.</p>`;
@@ -1517,6 +1770,7 @@
     tabs.appendToTab("overview", metrics);
     tabs.appendToTab("overview", rec);
     const selection = wireSelectedJobInteraction(eligibleJobs, tabs, gate.settings, panel);
+    runtime.selection = selection;
     tabs.appendToTab(
       "search",
       buildSmartSearchCard(
