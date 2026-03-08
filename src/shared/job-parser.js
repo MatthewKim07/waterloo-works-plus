@@ -126,6 +126,72 @@
     return match ? match[0].trim() : null;
   }
 
+  const DEGREE_FIELD_KEYWORDS = [
+    { key: "engineering", patterns: [/engineering/, /mechatronics/, /electrical/, /mechanical/, /systems engineering/] },
+    { key: "business", patterns: [/business/, /commerce/, /bba/, /mba/] },
+    { key: "marketing", patterns: [/marketing/, /brand/, /digital marketing/] },
+    { key: "communications", patterns: [/communications?/, /public relations/, /\bpr\b/] },
+    { key: "finance", patterns: [/finance/, /accounting/, /economics/, /econ/] },
+    { key: "operations", patterns: [/operations?/, /supply chain/, /logistics/] },
+    { key: "computer science", patterns: [/computer science/, /\bcs\b/, /software/] },
+    { key: "mathematics", patterns: [/mathematics?/, /\bmath\b/, /statistics?/, /actuarial/] },
+    { key: "science", patterns: [/\bscience\b/, /biolog/, /chemistry/, /physics/] },
+    { key: "arts", patterns: [/\barts\b/, /humanities/, /social science/] },
+    { key: "environment", patterns: [/environment/, /geography/, /planning/] },
+    { key: "health", patterns: [/\bhealth\b/, /kinesiology/, /public health/] }
+  ];
+
+  function detectDegreeFieldsInText(text) {
+    const lower = String(text || "").toLowerCase();
+    if (!lower) return [];
+    const out = [];
+
+    DEGREE_FIELD_KEYWORDS.forEach((entry) => {
+      if (entry.patterns.some((rx) => rx.test(lower))) {
+        out.push(entry.key);
+      }
+    });
+
+    if (/business[- ]related/.test(lower) && !out.includes("business")) out.push("business");
+    return ns.unique(out);
+  }
+
+  function extractDegreeFieldConstraints(sentences) {
+    const required = new Set();
+    const preferred = new Set();
+    const lines = [];
+
+    (sentences || []).forEach((sentence) => {
+      const line = String(sentence || "").trim();
+      if (!line) return;
+      const lower = line.toLowerCase();
+      if (!/(degree|major|program|field|student|bachelor|college|university)/.test(lower)) return;
+
+      const fields = detectDegreeFieldsInText(lower);
+      if (!fields.length) return;
+
+      const preferredCue = /(preferably|preferred|ideally|asset|nice to have|would be an asset)/.test(lower);
+      const requiredCue = /(must|required|mandatory|only|minimum|eligible)/.test(lower);
+      const focusAreaCue = /(focus area of the internship|degree or major in the focus area)/.test(lower);
+
+      if ((requiredCue || focusAreaCue) && !preferredCue) {
+        fields.forEach((field) => required.add(field));
+      } else if (preferredCue) {
+        fields.forEach((field) => preferred.add(field));
+      } else {
+        // Neutral degree/major mentions should still count as mild preferences.
+        fields.forEach((field) => preferred.add(field));
+      }
+      lines.push(line);
+    });
+
+    return {
+      requiredDegreeFields: Array.from(required),
+      preferredDegreeFields: Array.from(preferred).filter((field) => !required.has(field)),
+      degreeFieldLines: ns.unique(lines).slice(0, 8)
+    };
+  }
+
   function wordToNumber(token) {
     const value = String(token || "").toLowerCase().trim();
     const table = {
@@ -419,6 +485,7 @@
       .slice(0, 8);
 
     const hardEligibility = extractHardEligibilityRequirements(sentences);
+    const degreeFieldConstraints = extractDegreeFieldConstraints(sentences);
 
     const constraints = {
       workTermLength,
@@ -441,6 +508,9 @@
       allowedWorkTerms: hardEligibility.allowedWorkTerms,
       minAcademicYear: hardEligibility.minAcademicYear,
       eligibilityRequirementLines: hardEligibility.requirementLines,
+      requiredDegreeFields: degreeFieldConstraints.requiredDegreeFields,
+      preferredDegreeFields: degreeFieldConstraints.preferredDegreeFields,
+      degreeFieldLines: degreeFieldConstraints.degreeFieldLines,
       mastersRequired,
       phdRequired,
       graduateOnly
@@ -449,6 +519,8 @@
     return {
       requiredSkills,
       preferredSkills,
+      requiredSentences: requiredSentences.slice(0, 40),
+      preferredSentences: preferredSentences.slice(0, 40),
       constraints,
       summaryBullets,
       extractionMeta: {

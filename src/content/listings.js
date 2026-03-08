@@ -1,5 +1,13 @@
 (function initListingsPage(global) {
   const ns = (global.WWP = global.WWP || {});
+  const IS_BACKGROUND_PROBE_TAB = (() => {
+    try {
+      return new URLSearchParams(String(location.search || "")).get("wwp_probe") === "1";
+    } catch (_error) {
+      return false;
+    }
+  })();
+  if (window !== window.top && window.name === "wwp-probe-frame") return;
   if (ns.__WWP_LISTINGS_RAN) return;
   ns.__WWP_LISTINGS_RAN = true;
 
@@ -12,6 +20,27 @@
       .wwp-row-hidden-by-smart-search { display: none !important; }
       .wwp-row-hidden-by-term-filter { display: none !important; }
       .wwp-row-hidden-by-hard-filter { display: none !important; }
+      html.wwp-suppress-posting-ui .ui-dialog,
+      html.wwp-suppress-posting-ui .ui-widget-overlay,
+      html.wwp-suppress-posting-ui [role='dialog'],
+      html.wwp-suppress-posting-ui .modal,
+      html.wwp-suppress-posting-ui .modal-backdrop,
+      html.wwp-suppress-posting-ui .modal-dialog,
+      html.wwp-suppress-posting-ui .modal-content,
+      html.wwp-suppress-posting-ui .ui-sidebar,
+      html.wwp-suppress-posting-ui .ui-sidebar-mask,
+      html.wwp-suppress-posting-ui .ui-dialog,
+      html.wwp-suppress-posting-ui .ui-dialog-content,
+      html.wwp-suppress-posting-ui .ui-widget-overlay,
+      html.wwp-suppress-posting-ui .p-dialog,
+      html.wwp-suppress-posting-ui .p-dialog-mask,
+      html.wwp-suppress-posting-ui [id*='dialog'],
+      html.wwp-suppress-posting-ui [class*='drawer'],
+      html.wwp-suppress-posting-ui [class*='side-panel'] {
+        display: none !important;
+        visibility: hidden !important;
+        opacity: 0 !important;
+      }
     `;
     document.head.appendChild(style);
   }
@@ -109,6 +138,64 @@
       .trim();
   }
 
+  function isActionAnchorText(text) {
+    const t = cleanNoiseText(text).toLowerCase();
+    if (!t) return true;
+    return /(folder|print|apply|appl(y|ication)|rank|shortlist|not interested|viewed|deadline|new|delete|remove|save|share|map|compare)/.test(t);
+  }
+
+  function getAnchorDisplayText(anchor) {
+    if (!(anchor instanceof Element)) return "";
+    const text = cleanNoiseText(ns.getTextFromElement(anchor));
+    if (text) return text;
+    const aria = cleanNoiseText(anchor.getAttribute("aria-label") || anchor.getAttribute("title") || "");
+    return aria;
+  }
+
+  function isLikelyTitleAnchor(anchor) {
+    const text = getAnchorDisplayText(anchor);
+    if (!text) return false;
+    if (!isMeaningfulTitleText(text)) return false;
+    if (isActionAnchorText(text)) return false;
+    return true;
+  }
+
+  function pickPrimaryJobAnchor(row, titleHint) {
+    if (!(row instanceof Element)) return null;
+    const anchors = Array.from(row.querySelectorAll("a"));
+    if (!anchors.length) return null;
+
+    const titleNeedle = normalizeTitleKey(titleHint || "");
+    let best = null;
+    let bestScore = -Infinity;
+
+    anchors.forEach((anchor) => {
+      const text = getAnchorDisplayText(anchor);
+      if (!text) return;
+
+      let score = 0;
+      if (isLikelyTitleAnchor(anchor)) score += 140;
+      if (isMeaningfulTitleText(text)) score += 60;
+      if (!isActionAnchorText(text)) score += 30;
+
+      const href = String(anchor.getAttribute("href") || "").toLowerCase();
+      if (/javascript:|#|job|posting|position/.test(href)) score += 12;
+      if (/folder|print|rank|apply|notinterested|shortlist/.test(href)) score -= 60;
+
+      const normalized = normalizeTitleKey(text);
+      if (titleNeedle && normalized && titleNeedle.includes(normalized)) score += 90;
+      if (titleNeedle && normalized && normalized.includes(titleNeedle)) score += 90;
+
+      if (text.length >= 8) score += Math.min(25, Math.floor(text.length / 8));
+      if (score > bestScore) {
+        bestScore = score;
+        best = anchor;
+      }
+    });
+
+    return best;
+  }
+
   function isMeaningfulTitleText(text) {
     const t = cleanNoiseText(text);
     if (!t || t.length < 4) return false;
@@ -131,6 +218,18 @@
 
     const ranked = cellTexts.sort((a, b) => b.length - a.length);
     return ranked[0] || "";
+  }
+
+  function extractJobIdFromRow(row) {
+    if (!row) return "";
+    const cells = Array.from(row.querySelectorAll("td"));
+    for (const cell of cells) {
+      const text = cleanNoiseText(ns.getTextFromElement(cell));
+      if (/^\d{5,8}$/.test(text)) return text;
+    }
+    const rowText = cleanNoiseText(ns.getTextFromElement(row));
+    const match = rowText.match(/\b\d{5,8}\b/);
+    return match ? match[0] : "";
   }
 
   function extractUrlCandidatesFromString(value) {
@@ -156,16 +255,922 @@
 
       if (/jobid|postingid|positionid|opportunityid/.test(q)) return true;
       if (/\/posting\/|\/job\//.test(p)) return true;
-      if (/\/myaccount\/co-op\/direct\/jobs\.htm/.test(p) && /[?&](job|posting|position|id)=/.test(q)) return true;
-      if (/\/myaccount\/co-op\/direct\/jobs\.htm/.test(p) && q.length > 1 && !/[?&](page|sort|order|filter|tab)=/.test(q)) return true;
+      if (/\/myaccount\/co-op\/.*jobs\.htm/.test(p) && /[?&](job|posting|position|id)=/.test(q)) return true;
+      if (/\/myaccount\/co-op\/.*jobs\.htm/.test(p) && /[?&][a-z0-9_-]*(job|post|position|opportun|id)[a-z0-9_-]*=/.test(q)) {
+        return true;
+      }
       return false;
     } catch (_error) {
       return false;
     }
   }
 
+  const POSTING_QUERY_PARAM_CANDIDATES = [
+    "jobId",
+    "postingId",
+    "positionId",
+    "opportunityId",
+    "jobPostingId",
+    "selectedJobId",
+    "selectedPostingId",
+    "posting",
+    "position",
+    "job",
+    "id"
+  ];
+  const QUERY_PARAM_NOISE = /^(page|sort|order|filter|tab|viewed|new|deadline|offset|limit)$/i;
+  const SUBMIT_LIKE_PARAM = /(event|action|command|submit|method|op|operation|target|source|trigger|execute|update|ajax|faces|viewstate|state|token)/i;
+  const ID_LIKE_PARAM = /(job|post|position|opportun|record|detail|select|chosen|active|current|id)/i;
+
+  function addUrlCandidate(list, seen, rawUrl) {
+    const absolute = normalizeUrl(rawUrl);
+    if (!absolute) return;
+    if (!isAllowedJobUrl(absolute) || isLikelyNonJobPath(absolute)) return;
+    if (!isLikelyPostingUrl(absolute)) return;
+    if (seen.has(absolute)) return;
+    seen.add(absolute);
+    list.push(absolute);
+  }
+
+  function extractFunctionNamesFromJsSnippet(snippet) {
+    const text = String(snippet || "");
+    if (!text) return [];
+    const names = new Set();
+    const regex = /\b([A-Za-z_$][\w$]*)\s*\(/g;
+    let match;
+    while ((match = regex.exec(text))) {
+      const name = match[1];
+      if (!name) continue;
+      if (/^(if|for|while|switch|return|function|catch|new|setTimeout|setInterval)$/.test(name)) continue;
+      names.add(name);
+      if (names.size >= 24) break;
+    }
+    return Array.from(names);
+  }
+
+  function collectContextStringsForJob(job) {
+    const out = [];
+    const seen = new Set();
+    const push = (value) => {
+      const text = String(value || "");
+      if (!text.trim()) return;
+      if (seen.has(text)) return;
+      seen.add(text);
+      out.push(text);
+    };
+
+    const nodes = [];
+    if (job && job.row) nodes.push(job.row);
+    if (job && job.anchor && job.anchor !== job.row) nodes.push(job.anchor);
+
+    nodes.forEach((node) => {
+      const scoped = [node, ...Array.from(node.querySelectorAll("a[href], [onclick], [ondblclick], [data-url], [data-href], [data-link], button"))];
+      scoped.forEach((el) => {
+        ["href", "onclick", "ondblclick", "data-url", "data-href", "data-link"].forEach((attr) => {
+          const value = typeof el.getAttribute === "function" ? el.getAttribute(attr) : "";
+          if (value) push(value);
+        });
+      });
+    });
+
+    const fnNames = new Set();
+    out.forEach((text) => {
+      extractFunctionNamesFromJsSnippet(text).forEach((name) => fnNames.add(name));
+    });
+    Array.from(fnNames)
+      .slice(0, 16)
+      .forEach((name) => {
+        try {
+          const fn = window[name];
+          if (typeof fn === "function") {
+            push(Function.prototype.toString.call(fn));
+          }
+        } catch (_error) {}
+      });
+
+    const jobId = String((job && job.jobId) || "");
+    Array.from(document.querySelectorAll("script"))
+      .slice(0, 30)
+      .forEach((script) => {
+        const text = String(script.textContent || "");
+        if (!text) return;
+        if (jobId && text.includes(jobId)) {
+          push(text.slice(0, 6000));
+          return;
+        }
+        if (/jobs\.htm|postingid|jobid|positionid|opportunityid/i.test(text)) {
+          push(text.slice(0, 2400));
+        }
+      });
+
+    return out.slice(0, 80);
+  }
+
+  function discoverParamNamesFromContext(contextStrings) {
+    const byLower = new Map();
+    POSTING_QUERY_PARAM_CANDIDATES.forEach((param) => byLower.set(String(param).toLowerCase(), param));
+
+    const addName = (raw) => {
+      const name = String(raw || "").replace(/['"`\s]/g, "");
+      if (!name) return;
+      if (QUERY_PARAM_NOISE.test(name)) return;
+      if (!/(job|post|position|opportun|record|select|detail|id)/i.test(name)) return;
+      const lower = name.toLowerCase();
+      if (!byLower.has(lower)) byLower.set(lower, name);
+    };
+
+    (contextStrings || []).forEach((textRaw) => {
+      const text = String(textRaw || "");
+      if (!text) return;
+
+      let match;
+      const qsRegex = /[?&]([A-Za-z][\w-]{1,48})=/g;
+      while ((match = qsRegex.exec(text))) {
+        addName(match[1]);
+      }
+
+      const assignRegex = /([A-Za-z][\w-]{1,48})\s*[:=]\s*['"]?\d{5,8}\b/g;
+      while ((match = assignRegex.exec(text))) {
+        addName(match[1]);
+      }
+
+      const quotedRegex = /['"]([A-Za-z][\w-]{1,48})['"]\s*[:=]/g;
+      while ((match = quotedRegex.exec(text))) {
+        addName(match[1]);
+      }
+    });
+
+    return Array.from(byLower.values());
+  }
+
+  function discoverBaseUrlsFromContext(contextStrings) {
+    const urls = [];
+    const seen = new Set();
+    const pushUrl = (raw) => {
+      const absolute = normalizeUrl(raw);
+      if (!absolute) return;
+      if (!isAllowedJobUrl(absolute) || isLikelyNonJobPath(absolute)) return;
+      if (seen.has(absolute)) return;
+      seen.add(absolute);
+      urls.push(absolute);
+    };
+
+    (contextStrings || []).forEach((textRaw) => {
+      const text = String(textRaw || "");
+      if (!text) return;
+      extractUrlCandidatesFromString(text).forEach((candidate) => pushUrl(candidate));
+
+      const pathRegex = /\/myaccount\/co-op\/[a-z0-9/_-]*jobs\.htm/gi;
+      let match;
+      while ((match = pathRegex.exec(text))) {
+        pushUrl(match[0]);
+      }
+    });
+
+    return urls;
+  }
+
+  function addCandidateFromTemplate(list, seen, baseUrl, paramNames, jobId) {
+    let parsed;
+    try {
+      parsed = new URL(String(baseUrl || ""), location.origin);
+    } catch (_error) {
+      return;
+    }
+    if (!isAllowedJobUrl(parsed.href) || isLikelyNonJobPath(parsed.href)) return;
+
+    // Replace any existing numeric id-like query values first.
+    const numericKeys = [];
+    for (const [key, value] of parsed.searchParams.entries()) {
+      if (QUERY_PARAM_NOISE.test(key)) continue;
+      if (/^\d{5,8}$/.test(String(value || "")) && /(job|post|position|opportun|id)/i.test(key)) {
+        numericKeys.push(key);
+      }
+    }
+    if (numericKeys.length) {
+      numericKeys.forEach((key) => {
+        const next = new URL(parsed.href);
+        next.searchParams.set(key, jobId);
+        addUrlCandidate(list, seen, next.href);
+      });
+    }
+
+    paramNames.forEach((param) => {
+      if (QUERY_PARAM_NOISE.test(param)) return;
+      const next = new URL(parsed.href);
+      next.searchParams.set(param, jobId);
+      addUrlCandidate(list, seen, next.href);
+    });
+  }
+
+  function buildPostingUrlCandidates(job, knownPostingUrls, contextStrings) {
+    const candidates = [];
+    const seen = new Set();
+    const jobId = String((job && job.jobId) || "").trim();
+    const maxCandidates = 8;
+
+    if (job && job.url) {
+      addUrlCandidate(candidates, seen, job.url);
+    }
+
+    if (!jobId) {
+      return candidates;
+    }
+
+    const context = Array.isArray(contextStrings) ? contextStrings : [];
+    const paramNames = discoverParamNamesFromContext(context);
+    const contextUrls = discoverBaseUrlsFromContext(context);
+
+    const pathCandidates = (() => {
+      const currentPath = String(location.pathname || "");
+      const roots = [currentPath];
+      const directRoot = currentPath.replace(/\/jobs\.htm$/i, "");
+      if (directRoot && directRoot !== currentPath) roots.push(directRoot);
+      roots.push("/myAccount/co-op/direct");
+      roots.push("/myAccount/co-op/fullcycle");
+      roots.push("/myAccount/co-op/full-cycle");
+      roots.push("/myAccount/co-op");
+
+      const suffixes = [
+        "/jobs.htm",
+        "/job.htm",
+        "/jobPosting.htm",
+        "/job-posting.htm",
+        "/posting.htm",
+        "/postingDetails.htm",
+        "/job-details.htm"
+      ];
+
+      const paths = [];
+      roots.forEach((root) => {
+        const normalizedRoot = String(root || "").replace(/\/+$/, "");
+        suffixes.forEach((suffix) => {
+          if (!normalizedRoot) {
+            paths.push(suffix);
+          } else if (normalizedRoot.toLowerCase().endsWith(".htm")) {
+            paths.push(normalizedRoot);
+          } else {
+            paths.push(`${normalizedRoot}${suffix}`);
+          }
+        });
+      });
+      return ns.unique(paths);
+    })();
+
+    const baseUrls = ns.unique([
+      location.href,
+      new URL(location.pathname, location.origin).href,
+      `${location.origin}/myAccount/co-op/direct/jobs.htm`,
+      `${location.origin}/myAccount/co-op/fullcycle/jobs.htm`,
+      `${location.origin}/myAccount/co-op/full-cycle/jobs.htm`,
+      `${location.origin}/myAccount/co-op/jobs.htm`,
+      ...pathCandidates.map((path) => `${location.origin}${path.startsWith("/") ? path : `/${path}`}`),
+      ...((knownPostingUrls || []).filter(Boolean)),
+      ...contextUrls
+    ]);
+
+    baseUrls.forEach((baseUrl) => {
+      if (candidates.length >= maxCandidates) return;
+      addCandidateFromTemplate(candidates, seen, baseUrl, paramNames, jobId);
+    });
+
+    return candidates.slice(0, maxCandidates);
+  }
+
+  function collectRowActionPayload(job) {
+    const payload = {
+      sourceIds: new Set(),
+      eventTargets: new Set(),
+      formHints: new Set(),
+      raw: []
+    };
+    const seenRaw = new Set();
+
+    const pushRaw = (value) => {
+      const text = String(value || "");
+      if (!text || seenRaw.has(text)) return;
+      seenRaw.add(text);
+      payload.raw.push(text);
+    };
+
+    const nodes = [];
+    if (job && job.row) nodes.push(job.row);
+    if (job && job.anchor && job.anchor !== job.row) nodes.push(job.anchor);
+    nodes.forEach((node) => {
+      if (!(node instanceof Element)) return;
+      const scoped = [node, ...Array.from(node.querySelectorAll("a,button,[onclick],[ondblclick],[data-url],[data-href],[data-link],[data-ri],[data-rk]"))];
+      scoped.forEach((el) => {
+        ["onclick", "ondblclick", "href", "data-url", "data-href", "data-link", "data-ri", "data-rk"].forEach((attr) => {
+          const value = typeof el.getAttribute === "function" ? el.getAttribute(attr) : "";
+          if (value) pushRaw(value);
+        });
+      });
+    });
+
+    const collectIdLikeTokens = (text) => {
+      const tokenRegex = /[A-Za-z0-9_$:-]{6,}/g;
+      let token;
+      while ((token = tokenRegex.exec(text))) {
+        const value = token[0];
+        if (!value) continue;
+        if (!/:/.test(value)) continue;
+        if (/javascript|return|function|false|true|undefined|null/i.test(value)) continue;
+        if (/^[0-9:._-]+$/.test(value)) continue;
+        payload.sourceIds.add(value);
+        payload.eventTargets.add(value);
+      }
+    };
+
+    payload.raw.forEach((raw) => {
+      const text = String(raw || "");
+      if (!text) return;
+
+      let match;
+      const sourceRegexes = [
+        /(?:\bs\b|source|javax\.faces\.source)\s*[:=]\s*['"]([^'"]{4,220})['"]/gi,
+        /PrimeFaces\.ab\(\{[^}]*\bs\s*:\s*['"]([^'"]{4,220})['"]/gi,
+        /myfaces\.ab\(\{[^}]*\bs\s*:\s*['"]([^'"]{4,220})['"]/gi,
+        /A4J\.AJAX\.Submit\(\s*['"][^'"]*['"]\s*,\s*['"]([^'"]{4,220})['"]/gi
+      ];
+      sourceRegexes.forEach((rx) => {
+        while ((match = rx.exec(text))) {
+          payload.sourceIds.add(match[1]);
+        }
+      });
+
+      const formRegexes = [
+        /(?:\bf\b|form)\s*[:=]\s*['"]([^'"]{1,160})['"]/gi,
+        /getElementById\(\s*['"]([^'"]{1,160})['"]\s*\)/gi
+      ];
+      formRegexes.forEach((rx) => {
+        while ((match = rx.exec(text))) {
+          payload.formHints.add(match[1]);
+        }
+      });
+
+      const eventTargetRegexes = [/__doPostBack\(\s*['"]([^'"]{4,220})['"]\s*,/gi, /__EVENTTARGET\s*[:=]\s*['"]([^'"]{4,220})['"]/gi];
+      eventTargetRegexes.forEach((rx) => {
+        while ((match = rx.exec(text))) {
+          payload.eventTargets.add(match[1]);
+        }
+      });
+
+      collectIdLikeTokens(text);
+    });
+
+    if (job && job.anchor && typeof job.anchor.getAttribute === "function") {
+      const idAttr = String(job.anchor.getAttribute("id") || "").trim();
+      const nameAttr = String(job.anchor.getAttribute("name") || "").trim();
+      if (idAttr) {
+        payload.sourceIds.add(idAttr);
+        payload.eventTargets.add(idAttr);
+      }
+      if (nameAttr) {
+        payload.sourceIds.add(nameAttr);
+        payload.eventTargets.add(nameAttr);
+      }
+    }
+
+    return {
+      sourceIds: Array.from(payload.sourceIds).slice(0, 20),
+      eventTargets: Array.from(payload.eventTargets).slice(0, 20),
+      formHints: Array.from(payload.formHints).slice(0, 12),
+      raw: payload.raw.slice(0, 60)
+    };
+  }
+
+  function decodeJsQuotedValue(rawValue) {
+    const raw = String(rawValue || "");
+    if (!raw) return "";
+    const first = raw[0];
+    const last = raw[raw.length - 1];
+    if ((first === "'" && last === "'") || (first === '"' && last === '"')) {
+      const body = raw.slice(1, -1);
+      return body
+        .replace(/\\\\/g, "\\")
+        .replace(/\\'/g, "'")
+        .replace(/\\"/g, '"')
+        .replace(/\\n/g, "\n")
+        .replace(/\\r/g, "\r")
+        .replace(/\\t/g, "\t");
+    }
+    return raw;
+  }
+
+  function parsePrimeFacesAjaxConfigsFromText(textLike) {
+    const text = String(textLike || "");
+    if (!/(PrimeFaces|myfaces)\.ab\s*\(/i.test(text)) return [];
+
+    const configs = [];
+    const callRegex = /(?:PrimeFaces|myfaces)\.ab\(\s*\{([\s\S]*?)\}\s*\)/gi;
+    let callMatch;
+    while ((callMatch = callRegex.exec(text))) {
+      const objectBody = String(callMatch[1] || "");
+      if (!objectBody) continue;
+
+      const cfg = {};
+      const pairRegex = /([A-Za-z_$][\w$]*)\s*:\s*('(?:\\'|[^'])*'|"(?:\\"|[^"])*"|[A-Za-z0-9_:@.$-]+)/g;
+      let pairMatch;
+      while ((pairMatch = pairRegex.exec(objectBody))) {
+        const key = String(pairMatch[1] || "").trim();
+        const rawValue = String(pairMatch[2] || "").trim();
+        if (!key || !rawValue) continue;
+        cfg[key] = decodeJsQuotedValue(rawValue);
+      }
+
+      const source = String(cfg.s || cfg.source || "").trim();
+      if (!source) continue;
+      configs.push({
+        source,
+        form: String(cfg.f || cfg.form || "").trim(),
+        process: String(cfg.p || cfg.process || cfg.e || "").trim(),
+        update: String(cfg.u || cfg.update || "").trim(),
+        event: String(cfg.event || "").trim()
+      });
+    }
+
+    return configs;
+  }
+
+  function collectPrimeFacesAjaxConfigs(job) {
+    if (!job) return [];
+    const snippets = new Set();
+    const addSnippet = (value) => {
+      const text = String(value || "");
+      if (!text.trim()) return;
+      snippets.add(text);
+    };
+
+    const nodes = [];
+    if (job.anchor instanceof Element) nodes.push(job.anchor);
+    if (job.row instanceof Element) nodes.push(job.row);
+    nodes.forEach((node) => {
+      ["onclick", "ondblclick", "href", "data-url", "data-href", "data-link"].forEach((attr) => {
+        try {
+          const value = node.getAttribute(attr);
+          if (value) addSnippet(value);
+        } catch (_error) {}
+      });
+    });
+
+    if (job.row instanceof Element) {
+      Array.from(job.row.querySelectorAll("[onclick], [ondblclick], a[href]"))
+        .slice(0, 24)
+        .forEach((el) => {
+          ["onclick", "ondblclick", "href"].forEach((attr) => {
+            try {
+              const value = el.getAttribute(attr);
+              if (value) addSnippet(value);
+            } catch (_error) {}
+          });
+        });
+    }
+
+    const out = [];
+    const seen = new Set();
+    snippets.forEach((snippet) => {
+      parsePrimeFacesAjaxConfigsFromText(snippet).forEach((cfg) => {
+        const key = JSON.stringify([cfg.source, cfg.form, cfg.process, cfg.update, cfg.event]);
+        if (seen.has(key)) return;
+        seen.add(key);
+        out.push(cfg);
+      });
+    });
+    return out.slice(0, 20);
+  }
+
+  function lookupFormByHint(formHint) {
+    const hint = String(formHint || "").trim();
+    if (!hint) return null;
+    const direct = document.getElementById(hint);
+    if (direct instanceof HTMLFormElement) return direct;
+    try {
+      const named = document.forms.namedItem(hint);
+      if (named instanceof HTMLFormElement) return named;
+    } catch (_error) {}
+    try {
+      const escaped = window.CSS && typeof window.CSS.escape === "function" ? window.CSS.escape(hint) : hint.replace(/"/g, '\\"');
+      const byName = document.querySelector(`form[name="${escaped}"]`);
+      if (byName instanceof HTMLFormElement) return byName;
+    } catch (_error) {}
+    return null;
+  }
+
+  function resolveFormForPrimeFacesConfig(config, job, fallbackForms) {
+    const forms = Array.isArray(fallbackForms) ? fallbackForms : Array.from(document.forms || []);
+    const hinted = lookupFormByHint(config && config.form);
+    if (hinted) return hinted;
+    if (job && job.anchor && typeof job.anchor.closest === "function") {
+      const fromAnchor = job.anchor.closest("form");
+      if (fromAnchor instanceof HTMLFormElement) return fromAnchor;
+    }
+    if (job && job.row && typeof job.row.closest === "function") {
+      const fromRow = job.row.closest("form");
+      if (fromRow instanceof HTMLFormElement) return fromRow;
+    }
+    return forms[0] instanceof HTMLFormElement ? forms[0] : null;
+  }
+
+  function appendPrimeFacesExactCandidates(pushCandidate, job, paramNames, jobId) {
+    const primeConfigs = collectPrimeFacesAjaxConfigs(job);
+    if (!primeConfigs.length) return;
+    const forms = Array.from(document.forms || []).slice(0, 24);
+
+    primeConfigs.forEach((config) => {
+      const form = resolveFormForPrimeFacesConfig(config, job, forms);
+      if (!(form instanceof HTMLFormElement)) return;
+      const actionRaw = form.getAttribute("action") || location.pathname || location.href;
+      const action = normalizeUrl(actionRaw);
+      if (!action || !isAllowedJobUrl(action) || isLikelyNonJobPath(action)) return;
+
+      const sourceId = String(config.source || "").trim();
+      if (!sourceId) return;
+      const formId = String(config.form || form.getAttribute("id") || form.getAttribute("name") || "").trim();
+      const execute = String(config.process || sourceId).trim() || sourceId;
+      const render = String(config.update || "@all").trim() || "@all";
+      const eventName = String(config.event || "click").trim();
+
+      const hiddenPayload = getBaseHiddenFormPayload(form);
+      const baseBodyPayload = {
+        ...hiddenPayload,
+        "javax.faces.partial.ajax": "true",
+        "javax.faces.source": sourceId,
+        "javax.faces.partial.execute": execute,
+        "javax.faces.partial.render": render,
+        [sourceId]: sourceId
+      };
+      if (eventName) {
+        baseBodyPayload["javax.faces.behavior.event"] = eventName;
+        baseBodyPayload["javax.faces.partial.event"] = eventName;
+      }
+      if (formId) {
+        baseBodyPayload[formId] = formId;
+      }
+
+      const idNames = ns
+        .unique([
+          ...Object.keys(baseBodyPayload).filter((name) => ID_LIKE_PARAM.test(name)),
+          ...(Array.isArray(paramNames) ? paramNames.filter((name) => ID_LIKE_PARAM.test(name)) : [])
+        ])
+        .slice(0, 14);
+
+      if (!idNames.length) {
+        const body = new URLSearchParams(baseBodyPayload).toString();
+        if (body && body.length < 22000) {
+          pushCandidate({
+            method: "POST",
+            url: action,
+            headers: {
+              "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+              FacesRequest: "partial/ajax"
+            },
+            body,
+            source: "primefaces-exact",
+            matchConfidence: "high"
+          });
+        }
+        return;
+      }
+
+      idNames.forEach((idName) => {
+        const bodyPayload = { ...baseBodyPayload, [idName]: jobId };
+        const body = new URLSearchParams(bodyPayload).toString();
+        if (!body || body.length >= 22000) return;
+        pushCandidate({
+          method: "POST",
+          url: action,
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+            FacesRequest: "partial/ajax"
+          },
+          body,
+          source: "primefaces-exact",
+          matchConfidence: "high"
+        });
+      });
+    });
+  }
+
+  function parseJsfcljsCallsFromText(textLike) {
+    const text = String(textLike || "");
+    if (!/jsfcljs\s*\(/i.test(text)) return [];
+    const out = [];
+    const callRegex =
+      /jsfcljs\(\s*document\.getElementById\(\s*['"]([^'"]+)['"]\s*\)\s*,\s*\{([\s\S]*?)\}\s*,\s*['"]([^'"]*)['"]\s*\)/gi;
+    let callMatch;
+    while ((callMatch = callRegex.exec(text))) {
+      const formId = String(callMatch[1] || "").trim();
+      const paramsBody = String(callMatch[2] || "");
+      const target = String(callMatch[3] || "").trim();
+      if (!formId || !paramsBody) continue;
+
+      const params = {};
+      const pairRegex = /['"]([^'"]+)['"]\s*:\s*['"]([^'"]*)['"]/g;
+      let pairMatch;
+      while ((pairMatch = pairRegex.exec(paramsBody))) {
+        const k = String(pairMatch[1] || "").trim();
+        const v = String(pairMatch[2] || "").trim();
+        if (!k) continue;
+        params[k] = v;
+      }
+
+      if (!Object.keys(params).length) continue;
+      out.push({ formId, target, params });
+    }
+    return out;
+  }
+
+  function collectJsfcljsCalls(job) {
+    if (!job) return [];
+    const snippets = new Set();
+    const addSnippet = (value) => {
+      const text = String(value || "");
+      if (!text.trim()) return;
+      snippets.add(text);
+    };
+
+    const nodes = [];
+    if (job.anchor instanceof Element) nodes.push(job.anchor);
+    if (job.row instanceof Element) nodes.push(job.row);
+    nodes.forEach((node) => {
+      ["onclick", "ondblclick", "href"].forEach((attr) => {
+        try {
+          const value = node.getAttribute(attr);
+          if (value) addSnippet(value);
+        } catch (_error) {}
+      });
+    });
+
+    if (job.row instanceof Element) {
+      Array.from(job.row.querySelectorAll("[onclick], [ondblclick], a[href]"))
+        .slice(0, 24)
+        .forEach((el) => {
+          ["onclick", "ondblclick", "href"].forEach((attr) => {
+            try {
+              const value = el.getAttribute(attr);
+              if (value) addSnippet(value);
+            } catch (_error) {}
+          });
+        });
+    }
+
+    const out = [];
+    const seen = new Set();
+    snippets.forEach((snippet) => {
+      parseJsfcljsCallsFromText(snippet).forEach((call) => {
+        const key = JSON.stringify([call.formId, call.target, call.params]);
+        if (seen.has(key)) return;
+        seen.add(key);
+        out.push(call);
+      });
+    });
+    return out.slice(0, 20);
+  }
+
+  function appendJsfcljsExactCandidates(pushCandidate, job, paramNames, jobId) {
+    const calls = collectJsfcljsCalls(job);
+    if (!calls.length) return;
+
+    calls.forEach((call) => {
+      const form = lookupFormByHint(call.formId);
+      if (!(form instanceof HTMLFormElement)) return;
+      const actionRaw = form.getAttribute("action") || location.pathname || location.href;
+      const action = normalizeUrl(actionRaw);
+      if (!action || !isAllowedJobUrl(action) || isLikelyNonJobPath(action)) return;
+
+      const hiddenPayload = getBaseHiddenFormPayload(form);
+      const baseBodyPayload = { ...hiddenPayload, ...(call.params || {}) };
+
+      const idNames = ns
+        .unique([
+          ...Object.keys(baseBodyPayload).filter((name) => ID_LIKE_PARAM.test(name)),
+          ...(Array.isArray(paramNames) ? paramNames.filter((name) => ID_LIKE_PARAM.test(name)) : [])
+        ])
+        .slice(0, 14);
+
+      if (!idNames.length) {
+        const body = new URLSearchParams(baseBodyPayload).toString();
+        if (body && body.length < 22000) {
+          pushCandidate({
+            method: "POST",
+            url: action,
+            headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+            body,
+            source: "jsfcljs-exact",
+            matchConfidence: "high"
+          });
+        }
+        return;
+      }
+
+      idNames.forEach((idName) => {
+        const bodyPayload = { ...baseBodyPayload, [idName]: jobId };
+        const body = new URLSearchParams(bodyPayload).toString();
+        if (!body || body.length >= 22000) return;
+        pushCandidate({
+          method: "POST",
+          url: action,
+          headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+          body,
+          source: "jsfcljs-exact",
+          matchConfidence: "high"
+        });
+      });
+    });
+  }
+
+  function getBaseHiddenFormPayload(form) {
+    const payload = {};
+    if (!form) return payload;
+    const elements = Array.from(form.elements || []);
+    elements.forEach((el) => {
+      if (!el || typeof el.name !== "string") return;
+      const name = String(el.name || "").trim();
+      if (!name || name.length > 180) return;
+      const type = String(el.type || "").toLowerCase();
+      if (/(file|button|submit|reset)/.test(type)) return;
+      if ((type === "checkbox" || type === "radio") && !el.checked) return;
+
+      const value = String(el.value == null ? "" : el.value);
+      if (type === "hidden" || SUBMIT_LIKE_PARAM.test(name) || /viewstate|token|nonce|session|auth|csrf/i.test(name)) {
+        payload[name] = value;
+      }
+    });
+    return payload;
+  }
+
+  function appendJsfAjaxCandidates(out, pushCandidate, action, form, actionPayload, jobId) {
+    const hiddenPayload = getBaseHiddenFormPayload(form);
+    const sourceIds = actionPayload && Array.isArray(actionPayload.sourceIds) ? actionPayload.sourceIds : [];
+    if (!sourceIds.length) return;
+    const viewStateName = Object.keys(hiddenPayload).find((name) => /javax\.faces\.viewstate/i.test(name)) || "javax.faces.ViewState";
+    const formId = String((form && (form.getAttribute("id") || form.getAttribute("name"))) || "").trim();
+
+    sourceIds.slice(0, 10).forEach((sourceId) => {
+      const bodyPayload = {
+        ...hiddenPayload,
+        "javax.faces.partial.ajax": "true",
+        "javax.faces.source": sourceId,
+        "javax.faces.partial.execute": sourceId,
+        "javax.faces.partial.render": "@all",
+        [sourceId]: sourceId
+      };
+      if (formId) bodyPayload[formId] = formId;
+      if (!bodyPayload[viewStateName] && hiddenPayload[viewStateName]) bodyPayload[viewStateName] = hiddenPayload[viewStateName];
+      const idParam = Object.keys(bodyPayload).find((name) => ID_LIKE_PARAM.test(name));
+      if (idParam) bodyPayload[idParam] = jobId;
+
+      const body = new URLSearchParams(bodyPayload).toString();
+      if (!body || body.length > 14000) return;
+      pushCandidate({
+        method: "POST",
+        url: action,
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+          FacesRequest: "partial/ajax"
+        },
+        body
+      });
+    });
+  }
+
+  function appendAspNetPostbackCandidates(out, pushCandidate, action, form, actionPayload, jobId) {
+    const hiddenPayload = getBaseHiddenFormPayload(form);
+    const eventTargets = actionPayload && Array.isArray(actionPayload.eventTargets) ? actionPayload.eventTargets : [];
+    if (!eventTargets.length) return;
+
+    const hasViewState = Object.keys(hiddenPayload).some((name) => /__VIEWSTATE/i.test(name));
+    if (!hasViewState) return;
+
+    eventTargets.slice(0, 10).forEach((target) => {
+      const bodyPayload = {
+        ...hiddenPayload,
+        __EVENTTARGET: target,
+        __EVENTARGUMENT: ""
+      };
+      const idParam = Object.keys(bodyPayload).find((name) => ID_LIKE_PARAM.test(name));
+      if (idParam) bodyPayload[idParam] = jobId;
+      const body = new URLSearchParams(bodyPayload).toString();
+      if (!body || body.length > 16000) return;
+      pushCandidate({
+        method: "POST",
+        url: action,
+        headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+        body
+      });
+    });
+  }
+
+  function buildFormRequestCandidates(job, contextStrings) {
+    const jobId = String((job && job.jobId) || "").trim();
+    if (!jobId) return [];
+
+    const out = [];
+    const seen = new Set();
+    const paramNames = ns.unique([...POSTING_QUERY_PARAM_CANDIDATES, ...discoverParamNamesFromContext(contextStrings || [])]);
+    const actionPayload = collectRowActionPayload(job || {});
+    const forms = Array.from(document.forms || []).slice(0, 24);
+
+    const pushCandidate = (candidate) => {
+      const key = `${candidate.method}|${candidate.url}|${candidate.body || ""}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push(candidate);
+    };
+
+    appendPrimeFacesExactCandidates(pushCandidate, job, paramNames, jobId);
+    appendJsfcljsExactCandidates(pushCandidate, job, paramNames, jobId);
+
+    forms.forEach((form) => {
+      const actionRaw = form.getAttribute("action") || location.pathname || location.href;
+      const action = normalizeUrl(actionRaw);
+      if (!action || !isAllowedJobUrl(action) || isLikelyNonJobPath(action)) return;
+      if (!/\/myaccount\/co-op\/|jobs\.htm|posting|job/i.test(action.toLowerCase())) return;
+
+      const payload = {};
+      const elements = Array.from(form.elements || []);
+      elements.forEach((el) => {
+        if (!el || typeof el.name !== "string") return;
+        const name = String(el.name || "").trim();
+        if (!name || name.length > 120) return;
+        if (QUERY_PARAM_NOISE.test(name)) return;
+        const type = String(el.type || "").toLowerCase();
+        if (/(file|button|submit|reset)/.test(type)) return;
+        if ((type === "checkbox" || type === "radio") && !el.checked) return;
+
+        if (type !== "hidden" && !SUBMIT_LIKE_PARAM.test(name) && !ID_LIKE_PARAM.test(name)) {
+          return;
+        }
+
+        const value = String(el.value == null ? "" : el.value).trim();
+        if (!value && type !== "hidden") return;
+        payload[name] = value;
+      });
+
+      const idNames = ns.unique([
+        ...Object.keys(payload).filter((name) => ID_LIKE_PARAM.test(name)),
+        ...paramNames.filter((name) => ID_LIKE_PARAM.test(name))
+      ]).slice(0, 10);
+
+      appendJsfAjaxCandidates(out, pushCandidate, action, form, actionPayload, jobId);
+      appendAspNetPostbackCandidates(out, pushCandidate, action, form, actionPayload, jobId);
+
+      if (!idNames.length) return;
+
+      idNames.forEach((idName) => {
+        const bodyPayload = { ...payload, [idName]: jobId };
+        const postBody = new URLSearchParams(bodyPayload).toString();
+        if (postBody.length > 0 && postBody.length < 9000) {
+          pushCandidate({
+            method: "POST",
+            url: action,
+            headers: { "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8" },
+            body: postBody
+          });
+        }
+
+        const getUrl = new URL(action, location.origin);
+        Object.entries(bodyPayload).forEach(([k, v]) => {
+          if (typeof v === "string" && v.length <= 500) getUrl.searchParams.set(k, v);
+        });
+        pushCandidate({
+          method: "GET",
+          url: getUrl.href
+        });
+      });
+    });
+
+    return out.slice(0, 24);
+  }
+
+  function buildPostingRequestCandidates(job, knownPostingUrls, contextStrings) {
+    const getCandidates = buildPostingUrlCandidates(job, knownPostingUrls, contextStrings).map((url) => ({ method: "GET", url }));
+    const all = [...getCandidates, ...buildFormRequestCandidates(job, contextStrings)];
+    const out = [];
+    const seen = new Set();
+    all.forEach((candidate) => {
+      const method = String(candidate.method || "GET").toUpperCase();
+      const url = String(candidate.url || "");
+      const body = typeof candidate.body === "string" ? candidate.body : "";
+      if (!url) return;
+      const key = JSON.stringify([method, url, body]);
+      if (seen.has(key)) return;
+      seen.add(key);
+      out.push({
+        method,
+        url,
+        body: body || undefined,
+        headers: candidate.headers && typeof candidate.headers === "object" ? candidate.headers : undefined,
+        source: candidate.source ? String(candidate.source) : undefined,
+        matchConfidence: candidate.matchConfidence ? String(candidate.matchConfidence) : undefined
+      });
+    });
+    return out.slice(0, 28);
+  }
+
   function extractPostingUrlFromRow(row, anchor) {
     const values = [];
+    const jobIdHint = extractJobIdFromRow(row);
 
     if (anchor) {
       const href = anchor.getAttribute("href");
@@ -187,14 +1192,22 @@
       });
     });
 
+    const scored = [];
     for (const raw of values) {
       const absolute = normalizeUrl(raw);
       if (!absolute) continue;
       if (!isLikelyPostingUrl(absolute)) continue;
-      return absolute;
+      let score = 0;
+      const low = absolute.toLowerCase();
+      if (/jobid=|postingid=|positionid=|opportunityid=/.test(low)) score += 120;
+      if (jobIdHint && low.includes(jobIdHint.toLowerCase())) score += 90;
+      if (/\/posting\/|\/job\//.test(low)) score += 40;
+      if (/folder|print|apply/.test(low)) score -= 80;
+      scored.push({ url: absolute, score });
     }
 
-    return null;
+    scored.sort((a, b) => b.score - a.score);
+    return scored.length ? scored[0].url : null;
   }
 
   function collectRowCandidates() {
@@ -211,9 +1224,10 @@
       if (!rowText || rowText.length < 24) return;
       if (/sign out|logout|settings|profile|student help|about co-op/.test(rowText.toLowerCase())) return;
 
-      const anchor = row.querySelector("a[href]");
-      const title = extractTitleFromRow(row, anchor);
+      const guessedAnchor = pickPrimaryJobAnchor(row, "");
+      const title = extractTitleFromRow(row, guessedAnchor);
       if (!title) return;
+      const anchor = pickPrimaryJobAnchor(row, title) || guessedAnchor || null;
 
       const postingUrl = extractPostingUrlFromRow(row, anchor);
 
@@ -242,9 +1256,10 @@
       if (hasSidebarAncestor(row) || hasSidebarAncestor(anchor)) continue;
       if (hasNavLikeClass(row)) continue;
 
-      const title = ns.getTextFromElement(anchor);
+      const title = getAnchorDisplayText(anchor);
       if (!title || title.length < 3 || title.length > 220) continue;
       if (isLikelyNavLinkText(title)) continue;
+      if (!isLikelyTitleAnchor(anchor)) continue;
 
       const rowText = ns.getTextFromElement(row);
       if (rowText.length < 18) continue;
@@ -255,23 +1270,36 @@
       const rowSignals = /(deadline|employer|location|work term|job title|position)/i.test(rowText);
       if (tdCount < 2 && wordCount < 2 && !rowSignals) continue;
 
-      out.push({ row, anchor, title });
+      const primaryAnchor = pickPrimaryJobAnchor(row, title) || anchor;
+      out.push({ row, anchor: primaryAnchor, title });
     }
     return out;
   }
 
-  function inferCompany(row) {
+  function inferCompany(row, title) {
     const selectors = [
       ".company",
       "[data-company]",
-      "td:nth-child(2)",
       ".employer",
       ".organization"
     ];
     for (const selector of selectors) {
       const node = row.querySelector(selector);
       const text = ns.getTextFromElement(node);
-      if (text && text.length < 80) return text;
+      if (text && text.length < 80 && !/^\d{5,8}$/.test(text)) return text;
+    }
+
+    const titleNorm = cleanNoiseText(title || "").toLowerCase();
+    const cells = Array.from(row.querySelectorAll("td"))
+      .map((cell) => cleanNoiseText(ns.getTextFromElement(cell)))
+      .filter(Boolean);
+    for (const text of cells) {
+      const low = text.toLowerCase();
+      if (text.length > 80) continue;
+      if (/^\d{5,8}$/.test(text)) continue;
+      if (titleNorm && low === titleNorm) continue;
+      if (/(new|viewed|deadline|junior|intermediate|senior|in-person|remote|hybrid)/.test(low)) continue;
+      if (/[a-z]{3,}/i.test(text)) return text;
     }
     return "Unknown company";
   }
@@ -327,21 +1355,28 @@
   }
 
   function findJobRows() {
-    const anchors = Array.from(document.querySelectorAll("a[href]"));
+    const anchors = Array.from(document.querySelectorAll("a"));
     const strictCandidates = [];
 
     for (const anchor of anchors) {
       const href = anchor.getAttribute("href") || "";
-      const absoluteHref = normalizeUrl(href);
-      if (!absoluteHref || !isAllowedJobUrl(absoluteHref)) continue;
-      if (isLikelyNonJobPath(absoluteHref)) continue;
+      const hasHandler = anchor.hasAttribute("onclick") || anchor.hasAttribute("ondblclick");
+      const isJsHref = /^javascript:/i.test(String(href).trim());
+      if (!href && !hasHandler) continue;
+
+      if (!isJsHref) {
+        const absoluteHref = normalizeUrl(href);
+        if (!absoluteHref || !isAllowedJobUrl(absoluteHref)) continue;
+        if (isLikelyNonJobPath(absoluteHref)) continue;
+      }
 
       const row = anchor.closest("tr, .job-row, .posting-row, .job-listing-item, li, [role='row'], .row") || anchor.parentElement;
       if (!row) continue;
 
-      const title = ns.getTextFromElement(anchor);
+      const title = getAnchorDisplayText(anchor);
       if (!title || title.length < 3 || title.length > 220) continue;
       if (isLikelyNavLinkText(title)) continue;
+      if (!isLikelyTitleAnchor(anchor)) continue;
 
       const context = ns.getTextFromElement(row).slice(0, 600);
       if (!rowHasJobSignals(row, anchor, href, context)) continue;
@@ -373,18 +1408,21 @@
 
     const byUrl = new Map();
     scoped.forEach((item, scopedIndex) => {
-      const hrefFromAnchor = item.anchor ? normalizeUrl(item.anchor.getAttribute("href")) : null;
+      const primaryAnchor = pickPrimaryJobAnchor(item.row, item.title) || item.anchor || null;
+      const hrefFromAnchor = primaryAnchor ? normalizeUrl(primaryAnchor.getAttribute("href")) : null;
       const postingUrl = item.postingUrl || (hrefFromAnchor && isLikelyPostingUrl(hrefFromAnchor) ? hrefFromAnchor : null);
-      const key = postingUrl || `row-${item.rowIndex != null ? item.rowIndex : scopedIndex}`;
+      const jobId = extractJobIdFromRow(item.row);
+      const key = postingUrl || (jobId ? `id-${jobId}` : `row-${item.rowIndex != null ? item.rowIndex : scopedIndex}`);
 
       if (!byUrl.has(key)) {
         byUrl.set(key, {
           row: item.row,
-          anchor: item.anchor,
+          anchor: primaryAnchor,
           title: item.title,
           url: postingUrl,
+          jobId,
           key,
-          company: inferCompany(item.row),
+          company: inferCompany(item.row, item.title),
           location: inferLocation(item.row),
           snippet: inferSnippet(item.row)
         });
@@ -661,13 +1699,19 @@
       resumeSkills,
       safeParsed.requiredSkills,
       safeParsed.preferredSkills,
-      fullText
+      fullText,
+      {
+        requiredLines: safeParsed.requiredSentences,
+        preferredLines: safeParsed.preferredSentences
+      }
     );
     const keywordSkillMatch = computeResumeTextMatch(resumeSkills, analysisText, settings.preferences.targetRole);
     const skillMatch = computeBlendedSkillMatch(baseSkillMatch, keywordSkillMatch, safeParsed);
+    const targetRoleMatch = ns.computeTargetRoleMatch(job.title, analysisText, settings.preferences.targetRole);
+    const fieldAlignment = ns.computeDegreeFieldAlignment(safeParsed.constraints, settings);
 
     const termCompatibility = estimateTermCompatibilityFromConstraints(safeParsed.constraints, settings.preferences.workTerm);
-    const facultyAlignment = 50;
+    const facultyAlignment = fieldAlignment.score;
     const viability = ns.computeViabilityScore(skillMatch, termCompatibility, facultyAlignment, 0);
 
     const combinedText = [job.title, job.company, job.location, job.snippet, fullText.slice(0, 1200)].join(" ");
@@ -675,14 +1719,23 @@
     const industryBoost = ns.scoreIndustryPreference(combinedText, settings.preferences.industries);
     const termLengthBoost = ns.scoreTermLengthPreference(safeParsed.constraints, settings.preferences.preferredTermLength);
 
-    const rankingScore = skillMatch * 0.62 + viability.score * 0.28 + roleBoost + industryBoost + termLengthBoost;
+    let overallMatch = skillMatch * 0.55 + targetRoleMatch * 0.3 + viability.score * 0.15;
+    if (fieldAlignment.preferredMismatch) overallMatch -= 8;
+    if (fieldAlignment.requiredMismatch) overallMatch -= 38;
+    if (targetRoleMatch < 30 && skillMatch < 50) overallMatch -= 12;
+    overallMatch = ns.clamp(Math.round(overallMatch), 0, 100);
+
+    const rankingScore = overallMatch * 0.72 + viability.score * 0.16 + roleBoost + industryBoost + termLengthBoost;
     const flags = ns.getConstraintFlagLabels(safeParsed.constraints);
     const hard = ns.detectHardDisqualifier(safeParsed.constraints, settings);
-    const rec = ns.recommendAction(viability.score, {
+    const rec = ns.recommendAction(overallMatch, {
       eightMonthPreferred: !!safeParsed.constraints.eightMonthPreferred,
       userTermLength: settings.preferences.preferredTermLength,
       highSkillMatch: skillMatch >= 70,
       lowSkillMatch: skillMatch < 45,
+      roleMismatch: targetRoleMatch < 45,
+      fieldMismatchPreferred: fieldAlignment.preferredMismatch,
+      fieldMismatchRequired: fieldAlignment.requiredMismatch,
       hardDisqualifier: hard.doNotApply,
       hardReasons: hard.reasons
     });
@@ -692,8 +1745,11 @@
       skillMatch,
       baseSkillMatch,
       keywordSkillMatch,
+      targetRoleMatch,
+      overallMatch,
+      fieldAlignment,
       viability,
-      rankingScore: hard.doNotApply ? Math.max(0, rankingScore - 60) : rankingScore,
+      rankingScore: hard.doNotApply ? Math.max(0, rankingScore - 70) : rankingScore,
       requiredSkills: safeParsed.requiredSkills,
       flags,
       recommendation: rec,
@@ -704,7 +1760,8 @@
 
   function isElementVisible(node) {
     if (!(node instanceof Element)) return false;
-    const style = window.getComputedStyle(node);
+    const view = (node.ownerDocument && node.ownerDocument.defaultView) || window;
+    const style = view.getComputedStyle(node);
     if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity || 1) <= 0.02) return false;
     const rect = node.getBoundingClientRect();
     return rect.width > 40 && rect.height > 80;
@@ -718,7 +1775,202 @@
     );
   }
 
-  function findVisiblePostingRoot() {
+  function normalizeTitleKey(text) {
+    return String(text || "")
+      .toLowerCase()
+      .replace(/[^a-z0-9 ]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function looksLikeFullPostingParsed(parsed, selectedTitle) {
+    if (!parsed || typeof parsed !== "object") return false;
+    const text = ns.normalizeText(parsed.fullText || "");
+    if (!looksLikePostingContent(text)) return false;
+
+    const reqCount = Array.isArray(parsed.requiredSkills) ? parsed.requiredSkills.length : 0;
+    const prefCount = Array.isArray(parsed.preferredSkills) ? parsed.preferredSkills.length : 0;
+    const constraintValue =
+      parsed.constraints &&
+      (parsed.constraints.workTermDurationValue ||
+        parsed.constraints.coverLetterRequired ||
+        parsed.constraints.transcriptRequired ||
+        parsed.constraints.termRestriction ||
+        (Array.isArray(parsed.constraints.requiredDegreeFields) && parsed.constraints.requiredDegreeFields.length > 0));
+    if (reqCount + prefCount < 3 && !constraintValue && text.length < 1400) return false;
+
+    const TITLE_STOPWORDS = new Set([
+      "intern",
+      "internship",
+      "co",
+      "coop",
+      "student",
+      "position",
+      "role",
+      "job",
+      "junior",
+      "senior",
+      "assistant",
+      "engineering",
+      "developer",
+      "software",
+      "analyst"
+    ]);
+
+    const rawTitleTokens = normalizeTitleKey(selectedTitle)
+      .split(" ")
+      .filter((token) => token.length >= 4);
+    const titleTokens = rawTitleTokens.filter((token) => !TITLE_STOPWORDS.has(token));
+    const tokensForMatch = titleTokens.length ? titleTokens : rawTitleTokens;
+    if (!tokensForMatch.length) return text.length >= 900;
+    const lower = text.toLowerCase();
+    const hitCount = tokensForMatch.filter((token) => lower.includes(token)).length;
+    const minHits = tokensForMatch.length >= 4 ? 2 : 1;
+    return hitCount >= minHits;
+  }
+
+  function parsedLikelyMatchesSelectedJob(parsed, job) {
+    if (!job || !looksLikeFullPostingParsed(parsed, job.title)) return false;
+    const fullText = ns.normalizeText((parsed && parsed.fullText) || "").toLowerCase();
+    if (!fullText) return false;
+
+    const jobId = String((job && job.jobId) || "").trim();
+    if (jobId) {
+      if (fullText.includes(jobId.toLowerCase())) {
+        return true;
+      }
+      const numericIds = ns.unique((fullText.match(/\b\d{5,8}\b/g) || []).slice(0, 24));
+      if (numericIds.length > 0 && !numericIds.includes(jobId)) {
+        return false;
+      }
+    }
+
+    const companyStopwords = new Set([
+      "inc",
+      "ltd",
+      "corp",
+      "corporation",
+      "company",
+      "division",
+      "office",
+      "solutions",
+      "technologies",
+      "technology",
+      "services",
+      "systems",
+      "group",
+      "university",
+      "waterloo"
+    ]);
+    const companyTokens = normalizeTitleKey((job && job.company) || "")
+      .split(" ")
+      .filter((token) => token.length >= 4 && !companyStopwords.has(token));
+    if (companyTokens.length) {
+      const companyHits = companyTokens.filter((token) => fullText.includes(token)).length;
+      if (companyHits === 0 && !jobId) {
+        const reqCount = Array.isArray(parsed && parsed.requiredSkills) ? parsed.requiredSkills.length : 0;
+        const prefCount = Array.isArray(parsed && parsed.preferredSkills) ? parsed.preferredSkills.length : 0;
+        if (reqCount + prefCount < 8) return false;
+      }
+    }
+
+    return true;
+  }
+
+  function collectLikelyPostingStrings(value, out, depth, keyHint) {
+    if (depth > 6 || out.length > 240) return;
+    if (typeof value === "string") {
+      const text = ns.normalizeText(value);
+      if (!text) return;
+      const key = String(keyHint || "").toLowerCase();
+      const likelyByKey = /(description|summary|responsibil|qualif|require|prefer|skill|duties|work\s*term|duration|gpa|cover|transcript|posting|title|division|organization)/.test(
+        key
+      );
+      const likelyByText = looksLikePostingContent(text) || /(required skills|preferred skills|job posting information|work term duration|application information)/i.test(text);
+      if (likelyByKey || likelyByText || text.length >= 100) {
+        out.push(text);
+      }
+      return;
+    }
+
+    if (Array.isArray(value)) {
+      value.forEach((item) => collectLikelyPostingStrings(item, out, depth + 1, keyHint));
+      return;
+    }
+
+    if (value && typeof value === "object") {
+      Object.entries(value).forEach(([key, val]) => collectLikelyPostingStrings(val, out, depth + 1, key));
+    }
+  }
+
+  function parsePostingResponsePayload(rawText) {
+    const text = String(rawText || "");
+    if (!text.trim()) return ns.parseJobPosting("");
+
+    const trimmed = text.trim();
+    if (/^<\?xml/i.test(trimmed) || /<partial-response[\s>]/i.test(trimmed)) {
+      try {
+        const xml = new DOMParser().parseFromString(trimmed, "text/xml");
+        const updates = Array.from(xml.querySelectorAll("update"));
+        if (updates.length) {
+          const htmlFragments = updates
+            .map((node) => ns.normalizeText(node.textContent || ""))
+            .filter(Boolean);
+          const joined = htmlFragments.join("\n");
+          if (joined.length >= 180) {
+            return ns.parseJobPosting(joined);
+          }
+        }
+      } catch (_error) {
+        // fall through
+      }
+    }
+
+    if ((trimmed.startsWith("{") && trimmed.endsWith("}")) || (trimmed.startsWith("[") && trimmed.endsWith("]"))) {
+      try {
+        const data = JSON.parse(trimmed);
+        const pieces = [];
+        collectLikelyPostingStrings(data, pieces, 0, "");
+        const joined = ns.unique(pieces).join("\n");
+        if (joined.length >= 180) {
+          return ns.parseJobPosting(joined);
+        }
+      } catch (_error) {
+        // fall through
+      }
+    }
+
+    return ns.parseJobPosting(text);
+  }
+
+  function parsePostingFromContextBlob(job, contextStrings) {
+    const jobId = String((job && job.jobId) || "").trim().toLowerCase();
+    const titleTokens = normalizeTitleKey(job && job.title ? job.title : "")
+      .split(" ")
+      .filter((token) => token.length >= 4);
+    const chunks = [];
+
+    (contextStrings || []).forEach((raw) => {
+      const text = String(raw || "");
+      if (!text || text.length < 220) return;
+      const lower = text.toLowerCase();
+      if (jobId && !lower.includes(jobId)) return;
+      const tokenHits = titleTokens.filter((token) => lower.includes(token)).length;
+      const looksPosting = looksLikePostingContent(text) || /(required skills|preferred skills|job posting information|application information|work term duration)/i.test(lower);
+      if (!looksPosting && tokenHits < Math.min(2, titleTokens.length || 2)) return;
+      chunks.push(text.slice(0, 16000));
+    });
+
+    if (!chunks.length) return null;
+    const parsed = parsePostingResponsePayload(chunks.join("\n"));
+    if (parsedLikelyMatchesSelectedJob(parsed, job || {})) {
+      return parsed;
+    }
+    return null;
+  }
+
+  function collectPostingRootCandidatesFromDocument(doc, selectedTitle, visibleOnly) {
+    const rootDoc = doc || document;
     const selectors = [
       ".ui-dialog-content",
       ".modal-body",
@@ -726,21 +1978,310 @@
       "[role='dialog']",
       ".jobPosting",
       ".postingDetails",
-      ".job-details",
-      "main"
+      ".job-details"
     ];
     const candidates = [];
+    const titleNeedle = ns.normalizeText(selectedTitle || "").toLowerCase();
     selectors.forEach((selector) => {
-      document.querySelectorAll(selector).forEach((node) => {
-        if (!isElementVisible(node)) return;
+      rootDoc.querySelectorAll(selector).forEach((node) => {
+        if (visibleOnly && !isElementVisible(node)) return;
         const text = ns.normalizeText(node.textContent || "");
         if (!looksLikePostingContent(text)) return;
-        candidates.push({ node, textLength: text.length });
+        const lower = text.toLowerCase();
+        const titleBoost = titleNeedle && lower.includes(titleNeedle) ? 4000 : 0;
+        candidates.push({ node, textLength: text.length + titleBoost });
       });
     });
-    if (!candidates.length) return null;
     candidates.sort((a, b) => b.textLength - a.textLength);
-    return candidates[0].node;
+    return candidates.map((item) => item.node);
+  }
+
+  function collectPostingRootCandidates(selectedTitle, visibleOnly) {
+    return collectPostingRootCandidatesFromDocument(document, selectedTitle, visibleOnly);
+  }
+
+  function postingTextMatchesEntry(postingText, entry) {
+    const text = String(postingText || "").toLowerCase();
+    if (!text) return false;
+
+    const jobId = String(entry && entry.job && entry.job.jobId ? entry.job.jobId : "").trim();
+    if (jobId && text.includes(jobId.toLowerCase())) return true;
+    if (jobId) {
+      const numericIds = ns.unique((text.match(/\b\d{5,8}\b/g) || []).slice(0, 36));
+      if (numericIds.length && !numericIds.includes(jobId)) return false;
+    }
+
+    const TITLE_STOPWORDS = new Set([
+      "intern",
+      "internship",
+      "co",
+      "coop",
+      "student",
+      "position",
+      "role",
+      "job",
+      "junior",
+      "senior",
+      "assistant",
+      "engineering",
+      "developer",
+      "software",
+      "analyst"
+    ]);
+    const rawTitleTokens = normalizeTitleKey(entry && entry.job ? entry.job.title : "")
+      .split(" ")
+      .filter((token) => token.length >= 4);
+    const titleTokens = rawTitleTokens.filter((token) => !TITLE_STOPWORDS.has(token));
+    const tokensForMatch = titleTokens.length ? titleTokens : rawTitleTokens;
+    if (!tokensForMatch.length) return false;
+    const hitCount = tokensForMatch.filter((token) => text.includes(token)).length;
+    const minHits = tokensForMatch.length >= 4 ? 2 : 1;
+    if (hitCount < minHits) return false;
+
+    const companyTokens = normalizeTitleKey(entry && entry.job ? entry.job.company : "")
+      .split(" ")
+      .filter((token) => token.length >= 4 && !/^(inc|ltd|corp|company|division|office|group|solutions|technologies|systems)$/.test(token));
+    if (!companyTokens.length) return true;
+    const companyHits = companyTokens.filter((token) => text.includes(token)).length;
+    return companyHits >= 1;
+  }
+
+  function findPostingRootForEntry(entry) {
+    const title = entry && entry.job ? entry.job.title : "";
+    const visible = collectPostingRootCandidatesFromDocument(document, title, true);
+    for (const node of visible) {
+      const text = ns.normalizeText(node.textContent || "").toLowerCase();
+      if (postingTextMatchesEntry(text, entry)) return node;
+    }
+
+    const all = collectPostingRootCandidatesFromDocument(document, title, false);
+    for (const node of all) {
+      const text = ns.normalizeText(node.textContent || "").toLowerCase();
+      if (postingTextMatchesEntry(text, entry)) return node;
+    }
+
+    return null;
+  }
+
+  function findPostingRootForEntryInDocument(doc, entry) {
+    const title = entry && entry.job ? entry.job.title : "";
+    const visible = collectPostingRootCandidatesFromDocument(doc || document, title, true);
+    for (const node of visible) {
+      const text = ns.normalizeText(node.textContent || "").toLowerCase();
+      if (postingTextMatchesEntry(text, entry)) return node;
+    }
+
+    const all = collectPostingRootCandidatesFromDocument(doc || document, title, false);
+    for (const node of all) {
+      const text = ns.normalizeText(node.textContent || "").toLowerCase();
+      if (postingTextMatchesEntry(text, entry)) return node;
+    }
+    return null;
+  }
+
+  function closeLikelyPostingDialogInDocument(doc) {
+    const rootDoc = doc || document;
+    const selectors = [
+      "button[aria-label*='close' i]",
+      ".ui-dialog-titlebar-close",
+      ".modal-header .close",
+      ".modal .close",
+      "button.close",
+      "button[data-dismiss='modal']"
+    ];
+    for (const selector of selectors) {
+      const buttons = Array.from(rootDoc.querySelectorAll(selector));
+      const button = buttons.find((node) => isElementVisible(node) || node instanceof Element);
+      if (!button) continue;
+      try {
+        button.dispatchEvent(
+          new MouseEvent("click", {
+            bubbles: true,
+            cancelable: true,
+            view: (rootDoc && rootDoc.defaultView) || window
+          })
+        );
+        return true;
+      } catch (_error) {}
+    }
+    return false;
+  }
+
+  function findJobMatchByHint(jobs, jobIdHint, titleHint) {
+    const list = Array.isArray(jobs) ? jobs : [];
+    const jobId = String(jobIdHint || "").trim();
+    const titleKey = normalizeTitleKey(titleHint || "");
+    if (jobId) {
+      const byId = list.find((job) => String(job && job.jobId ? job.jobId : "").trim() === jobId);
+      if (byId) return byId;
+      const byRowText = list.find((job) => {
+        const text = ns.normalizeText(job && job.row ? job.row.textContent || "" : "");
+        return new RegExp(`\\b${jobId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(text);
+      });
+      if (byRowText) return byRowText;
+    }
+    if (titleKey) {
+      return (
+        list.find((job) => normalizeTitleKey(job && job.title ? job.title : "").includes(titleKey)) ||
+        list.find((job) => titleKey.includes(normalizeTitleKey(job && job.title ? job.title : ""))) ||
+        null
+      );
+    }
+    return null;
+  }
+
+  async function extractPostingByProbePayload(payload) {
+    const probe = payload && typeof payload === "object" ? payload : {};
+    const jobId = String(probe.jobId || "").trim();
+    const title = String(probe.title || "").trim();
+    const found = await waitForJobRows(null, 26, 360);
+    const jobs = found && Array.isArray(found.jobs) ? found.jobs : [];
+    if (!jobs.length) {
+      return { ok: false, error: "Probe tab found no job rows" };
+    }
+
+    const job = findJobMatchByHint(jobs, jobId, title);
+    if (!job) {
+      return { ok: false, error: "Probe tab could not match selected job row" };
+    }
+
+    const contextStrings = collectContextStringsForJob(job);
+    const knownPostingUrls = ns.unique(jobs.map((item) => (item && item.url ? item.url : "")).filter(Boolean));
+    const requests = buildPostingRequestCandidates(job, knownPostingUrls, contextStrings);
+    const startMs = Date.now();
+    for (const request of requests) {
+      if (Date.now() - startMs > 5200) break;
+      const method = String(request.method || "GET").toUpperCase();
+      const url = String(request.url || "");
+      const body = typeof request.body === "string" ? request.body : undefined;
+      const headers = request.headers && typeof request.headers === "object" ? request.headers : undefined;
+      if (!url) continue;
+      try {
+        const html = await ns.fetchJobHtml(url, { method, body, headers });
+        const parsed = parsePostingResponsePayload(html);
+        if (parsedLikelyMatchesSelectedJob(parsed, { ...job, title: title || job.title })) {
+          return { ok: true, parsed, source: "probe-network", method, url };
+        }
+      } catch (_error) {}
+    }
+
+    const anchor = pickPrimaryJobAnchor(job.row, job.title) || job.anchor || job.row.querySelector("a");
+    if (!(anchor instanceof Element)) {
+      return { ok: false, error: "Probe tab could not find title anchor" };
+    }
+
+    const captured = [];
+    const seenCaptured = new Set();
+    const pushCaptured = (value) => {
+      const text = String(value || "");
+      if (!text || text.length < 80) return;
+      if (seenCaptured.has(text)) return;
+      seenCaptured.add(text);
+      captured.push(text.slice(0, 250000));
+    };
+
+    const originalFetch = window.fetch;
+    const XHRCtor = window.XMLHttpRequest;
+    const originalXhrOpen = XHRCtor && XHRCtor.prototype ? XHRCtor.prototype.open : null;
+    const originalXhrSend = XHRCtor && XHRCtor.prototype ? XHRCtor.prototype.send : null;
+
+    const restoreNetworkHooks = () => {
+      try {
+        if (window.fetch !== originalFetch) {
+          window.fetch = originalFetch;
+        }
+      } catch (_error) {}
+      try {
+        if (XHRCtor && originalXhrOpen) XHRCtor.prototype.open = originalXhrOpen;
+        if (XHRCtor && originalXhrSend) XHRCtor.prototype.send = originalXhrSend;
+      } catch (_error) {}
+    };
+
+    try {
+      if (typeof originalFetch === "function") {
+        window.fetch = async function wrappedProbeFetch(...args) {
+          const response = await originalFetch.apply(this, args);
+          try {
+            const clone = response.clone();
+            const text = await clone.text();
+            pushCaptured(text);
+          } catch (_error) {}
+          return response;
+        };
+      }
+
+      if (XHRCtor && originalXhrOpen && originalXhrSend) {
+        XHRCtor.prototype.open = function patchedProbeOpen(method, url, ...rest) {
+          this.__wwp_url = String(url || "");
+          this.__wwp_method = String(method || "GET");
+          return originalXhrOpen.call(this, method, url, ...rest);
+        };
+        XHRCtor.prototype.send = function patchedProbeSend(body) {
+          try {
+            this.addEventListener("loadend", () => {
+              try {
+                const text = String(this.responseText || "");
+                pushCaptured(text);
+              } catch (_error) {}
+            });
+          } catch (_error) {}
+          return originalXhrSend.call(this, body);
+        };
+      }
+
+      const preventNav = (event) => {
+        event.preventDefault();
+      };
+      anchor.addEventListener("click", preventNav, { capture: true, once: true });
+      try {
+        anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+      } catch (_error) {
+        return { ok: false, error: "Probe tab click dispatch failed" };
+      }
+
+      const timeoutAt = Date.now() + 6200;
+      const probeEntry = { job: { jobId: job.jobId, title: title || job.title } };
+      while (Date.now() < timeoutAt) {
+        await ns.wait(130);
+
+        for (const blob of captured) {
+          const parsedPayload = parsePostingResponsePayload(blob);
+          if (!parsedLikelyMatchesSelectedJob(parsedPayload, { ...job, title: title || job.title })) continue;
+          closeLikelyPostingDialogInDocument(document);
+          return { ok: true, parsed: parsedPayload, source: "probe-click-payload", method: "CLICK" };
+        }
+
+        const root = findPostingRootForEntryInDocument(document, probeEntry);
+        if (!root) continue;
+        const parsed = ns.parseJobPosting(root.outerHTML || root.textContent || "");
+        if (parsedLikelyMatchesSelectedJob(parsed, { ...job, title: title || job.title })) {
+          closeLikelyPostingDialogInDocument(document);
+          return { ok: true, parsed, source: "probe-click-dom", method: "CLICK" };
+        }
+      }
+    } finally {
+      restoreNetworkHooks();
+      closeLikelyPostingDialogInDocument(document);
+    }
+
+    return { ok: false, error: "Probe tab could not load full posting content" };
+  }
+
+  function installProbeMessageListener() {
+    if (!chrome || !chrome.runtime || !chrome.runtime.onMessage) return;
+    chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+      if (!message || typeof message !== "object") return;
+      if (message.type !== "wwp:probeExtractByJob") return;
+      (async () => {
+        try {
+          const result = await extractPostingByProbePayload(message.payload || {});
+          sendResponse(result);
+        } catch (error) {
+          sendResponse({ ok: false, error: String(error && error.message ? error.message : error) });
+        }
+      })();
+      return true;
+    });
   }
 
   async function analyzeJobs(jobs, settings, panel) {
@@ -758,14 +2299,23 @@
       let parsed = null;
 
       if (job.url) {
-        const cached = await ns.getCachedJobAnalysis(job.url);
+        const canUseCache = isLikelyPostingUrl(job.url);
+        const cached = canUseCache ? await ns.getCachedJobAnalysis(job.url) : null;
         parsed = cached || null;
+        if (parsed && !parsedLikelyMatchesSelectedJob(parsed, job)) {
+          parsed = null;
+        }
 
         if (!parsed) {
           try {
             const html = await ns.fetchJobHtml(job.url);
-            parsed = ns.parseJobPosting(html);
-            await ns.setCachedJobAnalysis(job.url, parsed);
+            const parsedFromFetch = parsePostingResponsePayload(html);
+            if (parsedLikelyMatchesSelectedJob(parsedFromFetch, job)) {
+              parsed = parsedFromFetch;
+              if (canUseCache) {
+                await ns.setCachedJobAnalysis(job.url, parsed);
+              }
+            }
           } catch (_error) {
             parsed = null;
           }
@@ -1276,7 +2826,7 @@
         const li = document.createElement("li");
         const btn = document.createElement("button");
         btn.type = "button";
-        btn.textContent = `${index + 1}. ${entry.job.title} @ ${entry.job.company} | Skill ${entry.skillMatch}% | Viability ${entry.viability.score}%`;
+        btn.textContent = `${index + 1}. ${entry.job.title} @ ${entry.job.company} | Skill ${entry.skillMatch}% | Overall ${entry.overallMatch}%`;
         btn.style.width = "100%";
         btn.style.textAlign = "left";
         btn.style.border = "1px solid #334155";
@@ -1313,21 +2863,21 @@
 
     const metrics = document.createElement("div");
     metrics.appendChild(ns.makeProgressMetric("Skill Match", entry.skillMatch));
-    metrics.appendChild(ns.makeProgressMetric("Viability", entry.viability.score));
-    metrics.appendChild(ns.makeProgressMetric("Keyword Match", entry.keywordSkillMatch || 0));
+    metrics.appendChild(ns.makeProgressMetric("Target Role Match", entry.targetRoleMatch || 0));
+    metrics.appendChild(ns.makeProgressMetric("Overall Match", entry.overallMatch || 0));
 
     let fitLabel = "Low fit - likely skip";
     let tone = "danger";
     if (entry.hardDisqualifier) {
       fitLabel = "Do not apply - confirmed not a fit";
       tone = "danger";
-    } else if (entry.viability.score >= 75) {
+    } else if ((entry.overallMatch || 0) >= 75) {
       fitLabel = "Strong fit - apply";
       tone = "good";
-    } else if (entry.viability.score >= 60) {
+    } else if ((entry.overallMatch || 0) >= 60) {
       fitLabel = "Decent fit - apply selectively";
       tone = "good";
-    } else if (entry.viability.score >= 45) {
+    } else if ((entry.overallMatch || 0) >= 45) {
       fitLabel = "Reach - apply if projects align strongly";
       tone = "warn";
     }
@@ -1346,6 +2896,16 @@
       recList.appendChild(li);
     });
 
+    const resumeMap = ns.getResumeSkillMap(settings);
+    const reqSkills = Array.isArray(entry.requiredSkills) ? entry.requiredSkills : [];
+    if (reqSkills.length) {
+      const matchedRequired = reqSkills.filter((skill) => (resumeMap.get(skill) || 0) > 0).length;
+      const coverage = Math.round((matchedRequired / Math.max(1, reqSkills.length)) * 100);
+      const li = document.createElement("li");
+      li.textContent = `Required skill coverage: ${matchedRequired}/${reqSkills.length} (${coverage}%).`;
+      recList.appendChild(li);
+    }
+
     const topSkills = (entry.requiredSkills || []).slice(0, 6);
     if (topSkills.length) {
       const li = document.createElement("li");
@@ -1357,10 +2917,33 @@
 
     const pref = document.createElement("p");
     pref.className = "wwp-inline-note";
-    pref.textContent = `Your prefs: term ${settings.preferences.workTerm}, role ${settings.preferences.targetRole || "(not set)"}, length ${settings.preferences.preferredTermLength}. Skill score combines posting requirements + title/summary match.`;
+    pref.textContent = `Your prefs: term ${settings.preferences.workTerm}, role ${settings.preferences.targetRole || "(not set)"}, length ${settings.preferences.preferredTermLength}. Overall match blends skills, role alignment, and eligibility compatibility.`;
 
     card.append(title, metrics, chips, pref);
     return { card, rec };
+  }
+
+  function buildSelectedJobPendingCard(entry) {
+    const card = ns.makeCard("Selected Job");
+    const title = document.createElement("p");
+    title.style.margin = "0 0 8px";
+    title.style.fontWeight = "700";
+    title.textContent = `${entry.job.title} @ ${entry.job.company || "Unknown company"}`;
+
+    const note = document.createElement("p");
+    note.className = "wwp-inline-note";
+    note.textContent = "Accurate fit scores are shown only after you open this job's description.";
+
+    const hint = document.createElement("ul");
+    hint.className = "wwp-list";
+    const li1 = document.createElement("li");
+    li1.textContent = "Click the job title link to open the posting.";
+    const li2 = document.createElement("li");
+    li2.textContent = "Once opened, WaterlooWorks+ will load full-match percentages in this tab.";
+    hint.append(li1, li2);
+
+    card.append(title, note, hint);
+    return { card };
   }
 
   function wireSelectedJobInteraction(scoredJobs, tabs, settings, panel) {
@@ -1371,98 +2954,765 @@
     const byKey = new Map();
     const byTitle = new Map();
     const resumeSkills = ns.getResumeSkillMap(settings);
+    const knownPostingUrls = ns.unique(scoredJobs.map((entry) => (entry && entry.job ? entry.job.url : "")).filter(Boolean));
     let renderNonce = 0;
+    let suppressSelectionHandlers = false;
     const cleanup = [];
+    const probeState = {
+      iframe: null,
+      loadedUrl: "",
+      loading: null
+    };
 
-    async function refreshEntryFromVisiblePosting(entry) {
-      const root = findVisiblePostingRoot();
-      if (!root) return null;
-      const rootText = ns.normalizeText(root.textContent || "");
-      if (!looksLikePostingContent(rootText)) return null;
-
-      const contentFingerprint = rootText.slice(0, 2200);
-      if (entry && entry.__livePostingFingerprint === contentFingerprint) return null;
-
-      const parsedLive = ns.parseJobPosting(root.outerHTML || rootText);
-      if (
-        (!parsedLive.requiredSkills || parsedLive.requiredSkills.length === 0) &&
-        (!parsedLive.preferredSkills || parsedLive.preferredSkills.length === 0)
-      ) {
-        return null;
+    function getProbeTargetUrl() {
+      try {
+        const next = new URL(location.href);
+        next.hash = "";
+        return next.href;
+      } catch (_error) {
+        return location.href;
       }
-
-      const analyzed = analyzeParsedJob(entry.job, parsedLive, resumeSkills, settings);
-      return {
-        ...entry,
-        ...analyzed,
-        __livePostingFingerprint: contentFingerprint
-      };
     }
 
-    function normalizeTitleKey(text) {
-      return String(text || "")
-        .toLowerCase()
-        .replace(/[^a-z0-9 ]+/g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
+    function createProbeFrame() {
+      const frame = document.createElement("iframe");
+      frame.name = "wwp-probe-frame";
+      frame.title = "wwp-probe-frame";
+      frame.setAttribute("aria-hidden", "true");
+      frame.setAttribute("tabindex", "-1");
+      frame.style.position = "fixed";
+      frame.style.left = "-20000px";
+      frame.style.top = "0";
+      frame.style.width = "1280px";
+      frame.style.height = "900px";
+      frame.style.opacity = "0";
+      frame.style.pointerEvents = "none";
+      frame.style.border = "0";
+      frame.style.zIndex = "-1";
+      document.body.appendChild(frame);
+      probeState.iframe = frame;
+      return frame;
+    }
+
+    async function ensureProbeFrameLoaded(forceReload) {
+      const targetUrl = getProbeTargetUrl();
+      let frame = probeState.iframe;
+      if (!frame || !document.contains(frame)) {
+        frame = createProbeFrame();
+        probeState.loadedUrl = "";
+      }
+      if (!forceReload && probeState.loadedUrl === targetUrl && frame.contentDocument && frame.contentDocument.readyState === "complete") {
+        return frame.contentDocument;
+      }
+      if (probeState.loading && !forceReload) {
+        return probeState.loading;
+      }
+      probeState.loading = new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          cleanupLoad();
+          reject(new Error("Probe frame load timeout"));
+        }, 6500);
+        const onLoad = () => {
+          cleanupLoad();
+          probeState.loadedUrl = targetUrl;
+          resolve(frame.contentDocument);
+        };
+        const onError = () => {
+          cleanupLoad();
+          reject(new Error("Probe frame failed to load"));
+        };
+        const cleanupLoad = () => {
+          clearTimeout(timeout);
+          frame.removeEventListener("load", onLoad);
+          frame.removeEventListener("error", onError);
+          probeState.loading = null;
+        };
+        frame.addEventListener("load", onLoad, { once: true });
+        frame.addEventListener("error", onError, { once: true });
+        frame.src = targetUrl;
+      });
+      return probeState.loading;
+    }
+
+    function findRowForJobInDocument(doc, entry) {
+      if (!doc || !entry || !entry.job) return null;
+      const jobId = String(entry.job.jobId || "").trim();
+      const titleKey = normalizeTitleKey(entry.job.title);
+      const rows = Array.from(doc.querySelectorAll("tr"));
+
+      if (jobId) {
+        const byId = rows.find((row) => {
+          const text = ns.normalizeText(row.textContent || "");
+          return new RegExp(`\\b${jobId.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`).test(text);
+        });
+        if (byId) return byId;
+      }
+
+      if (titleKey) {
+        return (
+          rows.find((row) => {
+            const text = normalizeTitleKey(row.textContent || "");
+            return text.includes(titleKey);
+          }) || null
+        );
+      }
+
+      return null;
+    }
+
+    function closePostingInProbeDocument(doc) {
+      if (!doc) return;
+      const selectors = [
+        "button[aria-label*='close' i]",
+        ".ui-dialog-titlebar-close",
+        ".modal-header .close",
+        ".modal .close",
+        "button.close",
+        "button[data-dismiss='modal']"
+      ];
+      for (const selector of selectors) {
+        const buttons = Array.from(doc.querySelectorAll(selector));
+        const button = buttons.find((node) => isElementVisible(node));
+        if (button) {
+          try {
+            button.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: doc.defaultView || window }));
+          } catch (_error) {}
+          break;
+        }
+      }
+    }
+
+    async function hydrateEntryFromProbeFrame(entry) {
+      if (!entry || !entry.job) return null;
+      if (entry.__probeHydrateInFlight && entry.__probeHydratePromise) return entry.__probeHydratePromise;
+      const now = Date.now();
+      if (entry.__probeHydrateLastAttempt && now - entry.__probeHydrateLastAttempt < 1400) return null;
+      entry.__probeHydrateLastAttempt = now;
+      entry.__probeHydrateInFlight = true;
+      const task = (async () => {
+        let probeDoc;
+        try {
+          try {
+            probeDoc = await ensureProbeFrameLoaded(false);
+          } catch (_error) {
+            probeDoc = await ensureProbeFrameLoaded(true);
+          }
+
+          let probeRow = findRowForJobInDocument(probeDoc, entry);
+          if (!probeRow) {
+            await ns.wait(450);
+            probeRow = findRowForJobInDocument(probeDoc, entry);
+          }
+          if (!probeRow) {
+            probeDoc = await ensureProbeFrameLoaded(true);
+            probeRow = findRowForJobInDocument(probeDoc, entry);
+          }
+          if (!probeRow) return null;
+
+          const probeAnchor = pickPrimaryJobAnchor(probeRow, entry.job.title) || probeRow.querySelector("a");
+          if (!(probeAnchor instanceof Element)) return null;
+
+          const probeWin = (probeDoc && probeDoc.defaultView) || window;
+          const captured = [];
+          const seen = new Set();
+          const pushCaptured = (value) => {
+            const text = String(value || "");
+            if (!text || text.length < 80) return;
+            if (seen.has(text)) return;
+            seen.add(text);
+            captured.push(text.slice(0, 250000));
+          };
+
+          const originalFetch = probeWin.fetch;
+          const ProbeXhrCtor = probeWin.XMLHttpRequest;
+          const originalXhrOpen = ProbeXhrCtor && ProbeXhrCtor.prototype ? ProbeXhrCtor.prototype.open : null;
+          const originalXhrSend = ProbeXhrCtor && ProbeXhrCtor.prototype ? ProbeXhrCtor.prototype.send : null;
+          const style = probeDoc.createElement("style");
+          style.id = "wwp-probe-hide-posting-style";
+          style.textContent = `
+            .ui-dialog, .ui-widget-overlay, [role='dialog'], .modal, .modal-backdrop, .ui-sidebar, .ui-sidebar-mask, [class*='drawer'], [class*='side-panel'] {
+              display: none !important;
+              visibility: hidden !important;
+              opacity: 0 !important;
+            }
+          `;
+          (probeDoc.head || probeDoc.documentElement).appendChild(style);
+
+          const restore = () => {
+            try {
+              if (probeWin.fetch !== originalFetch) {
+                probeWin.fetch = originalFetch;
+              }
+            } catch (_error) {}
+            try {
+              if (ProbeXhrCtor && originalXhrOpen) ProbeXhrCtor.prototype.open = originalXhrOpen;
+              if (ProbeXhrCtor && originalXhrSend) ProbeXhrCtor.prototype.send = originalXhrSend;
+            } catch (_error) {}
+            try {
+              const node = probeDoc.getElementById("wwp-probe-hide-posting-style");
+              if (node) node.remove();
+            } catch (_error) {}
+          };
+
+          try {
+            if (typeof originalFetch === "function") {
+              probeWin.fetch = async function wrappedProbeFetch(...args) {
+                const response = await originalFetch.apply(this, args);
+                try {
+                  const clone = response.clone();
+                  const text = await clone.text();
+                  pushCaptured(text);
+                } catch (_error) {}
+                return response;
+              };
+            }
+
+            if (ProbeXhrCtor && originalXhrOpen && originalXhrSend) {
+              ProbeXhrCtor.prototype.open = function patchedProbeOpen(method, url, ...rest) {
+                this.__wwp_url = String(url || "");
+                this.__wwp_method = String(method || "GET");
+                return originalXhrOpen.call(this, method, url, ...rest);
+              };
+              ProbeXhrCtor.prototype.send = function patchedProbeSend(body) {
+                try {
+                  this.addEventListener("loadend", () => {
+                    try {
+                      const text = String(this.responseText || "");
+                      pushCaptured(text);
+                    } catch (_error) {}
+                  });
+                } catch (_error) {}
+                return originalXhrSend.call(this, body);
+              };
+            }
+
+            // Always block default anchor navigation inside the probe frame.
+            // We only need page handlers/XHR side-effects, not href navigation (which can be javascript:).
+            const preventDefault = (event) => {
+              event.preventDefault();
+            };
+            probeAnchor.addEventListener("click", preventDefault, { capture: true, once: true });
+
+            probeAnchor.dispatchEvent(
+              new MouseEvent("click", {
+                bubbles: true,
+                cancelable: true,
+                view: probeWin
+              })
+            );
+
+            const startedAt = Date.now();
+            const timeoutAt = startedAt + 4600;
+            let probeRowTriggered = false;
+            while (Date.now() < timeoutAt) {
+              await ns.wait(120);
+              const currentDoc = (probeState.iframe && probeState.iframe.contentDocument) || probeDoc;
+              if (!currentDoc) continue;
+
+              for (const blob of captured) {
+                const parsedPayload = parsePostingResponsePayload(blob);
+                if (!parsedLikelyMatchesSelectedJob(parsedPayload, entry.job)) continue;
+                const analyzed = analyzeParsedJob(entry.job, parsedPayload, resumeSkills, settings);
+                closePostingInProbeDocument(currentDoc);
+                return {
+                  ...entry,
+                  ...analyzed,
+                  __probeHydrated: true,
+                  __probeHydratedAt: Date.now()
+                };
+              }
+
+              const root = findPostingRootForEntryInDocument(currentDoc, entry);
+              if (root) {
+                const parsedLive = ns.parseJobPosting(root.outerHTML || root.textContent || "");
+                if (parsedLikelyMatchesSelectedJob(parsedLive, entry.job)) {
+                  const analyzed = analyzeParsedJob(entry.job, parsedLive, resumeSkills, settings);
+                  closePostingInProbeDocument(currentDoc);
+                  return {
+                    ...entry,
+                    ...analyzed,
+                    __probeHydrated: true,
+                    __probeHydratedAt: Date.now()
+                  };
+                }
+              }
+
+              const bodyText = ns.normalizeText((currentDoc.body && currentDoc.body.textContent) || "");
+              if (looksLikePostingContent(bodyText) && postingTextMatchesEntry(bodyText, entry)) {
+                const parsedDoc = ns.parseJobPosting(currentDoc.documentElement ? currentDoc.documentElement.outerHTML : bodyText);
+                if (parsedLikelyMatchesSelectedJob(parsedDoc, entry.job)) {
+                  const analyzed = analyzeParsedJob(entry.job, parsedDoc, resumeSkills, settings);
+                  closePostingInProbeDocument(currentDoc);
+                  return {
+                    ...entry,
+                    ...analyzed,
+                    __probeHydrated: true,
+                    __probeHydratedAt: Date.now()
+                  };
+                }
+              }
+
+              // Some WW tables wire open handlers on the row (not anchor). Trigger once inside hidden probe frame only.
+              if (!probeRowTriggered && probeRow && Date.now() - startedAt > 1200) {
+                probeRowTriggered = true;
+                try {
+                  probeRow.dispatchEvent(
+                    new MouseEvent("click", {
+                      bubbles: true,
+                      cancelable: true,
+                      view: probeWin
+                    })
+                  );
+                  probeRow.dispatchEvent(
+                    new MouseEvent("dblclick", {
+                      bubbles: true,
+                      cancelable: true,
+                      view: probeWin
+                    })
+                  );
+                } catch (_error) {}
+              }
+            }
+          } finally {
+            restore();
+          }
+        } catch (_error) {
+          return null;
+        } finally {
+          entry.__probeHydrateInFlight = false;
+          entry.__probeHydratePromise = null;
+        }
+        return null;
+      })();
+
+      entry.__probeHydratePromise = task;
+      return task;
+    }
+
+    function rememberEntry(entry) {
+      if (!entry || !entry.job) return;
+      if (entry.job.key) byKey.set(entry.job.key, entry);
+      const titleKey = normalizeTitleKey(entry.job.title);
+      if (titleKey) byTitle.set(titleKey, entry);
+    }
+
+    async function refreshEntryFromVisiblePosting(entry) {
+      const retryScheduleMs = [0, 140, 260, 420, 620, 900, 1250, 1700, 2200];
+
+      for (let idx = 0; idx < retryScheduleMs.length; idx += 1) {
+        if (idx > 0) {
+          await ns.wait(retryScheduleMs[idx] - retryScheduleMs[idx - 1]);
+        }
+
+        const root = findPostingRootForEntry(entry);
+        if (!root) continue;
+
+        const rootText = ns.normalizeText(root.textContent || "");
+        if (!looksLikePostingContent(rootText)) continue;
+
+        const contentFingerprint = rootText.slice(0, 2200);
+        if (entry && entry.__livePostingFingerprint === contentFingerprint) return null;
+
+        const parsedLive = ns.parseJobPosting(root.outerHTML || rootText);
+        const reqCount = (parsedLive.requiredSkills || []).length;
+        const prefCount = (parsedLive.preferredSkills || []).length;
+
+        // If modal content is still partially loading, retry until we get meaningful skill extraction.
+        if (reqCount + prefCount < 4 && idx < retryScheduleMs.length - 1) {
+          continue;
+        }
+        if (reqCount + prefCount === 0) {
+          continue;
+        }
+        if (!parsedLikelyMatchesSelectedJob(parsedLive, entry.job)) {
+          continue;
+        }
+
+        const analyzed = analyzeParsedJob(entry.job, parsedLive, resumeSkills, settings);
+        return {
+          ...entry,
+          ...analyzed,
+          __livePostingFingerprint: contentFingerprint
+        };
+      }
+
+      return null;
+    }
+
+  async function hydrateEntryFromNetwork(entry) {
+      if (!entry || !entry.job) return null;
+      const now = Date.now();
+      const minRetryMs = 260;
+      if (entry.__networkHydrateInFlight && entry.__networkHydratePromise) return entry.__networkHydratePromise;
+      if (entry.__networkHydrateLastAttempt && now - entry.__networkHydrateLastAttempt < minRetryMs) return null;
+      entry.__networkHydrateInFlight = true;
+      entry.__networkHydrateLastAttempt = now;
+
+      const task = (async () => {
+        const startMs = Date.now();
+        const contextStrings = entry.job.__contextStrings || collectContextStringsForJob(entry.job);
+        entry.job.__contextStrings = contextStrings;
+        const requests = buildPostingRequestCandidates(entry.job, knownPostingUrls, contextStrings);
+        for (const request of requests) {
+          if (Date.now() - startMs > 5200) break;
+          const method = String(request.method || "GET").toUpperCase();
+          const url = String(request.url || "");
+          const body = typeof request.body === "string" ? request.body : "";
+          const headers = request.headers && typeof request.headers === "object" ? request.headers : undefined;
+          const highConfidenceRequest = String(request.matchConfidence || "").toLowerCase() === "high";
+          if (!url) continue;
+
+          const canUseCache = method === "GET" && !body && isLikelyPostingUrl(url);
+          let parsed = canUseCache ? await ns.getCachedJobAnalysis(url) : null;
+          if (parsed && !parsedLikelyMatchesSelectedJob(parsed, entry.job)) {
+            parsed = null;
+          }
+          if (!parsed) {
+            try {
+              const html = await ns.fetchJobHtml(url, {
+                method,
+                body: body || undefined,
+                headers
+              });
+              const parsedFromFetch = parsePostingResponsePayload(html);
+              const likelyMatch =
+                parsedLikelyMatchesSelectedJob(parsedFromFetch, entry.job) ||
+                (highConfidenceRequest && looksLikeFullPostingParsed(parsedFromFetch, entry.job.title));
+              if (!likelyMatch) {
+                continue;
+              }
+              parsed = parsedFromFetch;
+              if (canUseCache) {
+                await ns.setCachedJobAnalysis(url, parsed);
+              }
+            } catch (_error) {
+              continue;
+            }
+          }
+
+          const parsedLikely =
+            parsedLikelyMatchesSelectedJob(parsed, entry.job) || (highConfidenceRequest && looksLikeFullPostingParsed(parsed, entry.job.title));
+          if (!parsedLikely) {
+            continue;
+          }
+
+          if (url && !knownPostingUrls.includes(url)) {
+            knownPostingUrls.push(url);
+          }
+
+          const hydratedJob = { ...entry.job, url };
+          const analyzed = analyzeParsedJob(hydratedJob, parsed, resumeSkills, settings);
+          return {
+            ...entry,
+            ...analyzed,
+            job: hydratedJob,
+            __networkHydrated: true,
+            __networkHydratedAt: Date.now()
+          };
+        }
+
+        const parsedFromContext = parsePostingFromContextBlob(entry.job, contextStrings);
+        if (parsedFromContext && parsedLikelyMatchesSelectedJob(parsedFromContext, entry.job)) {
+          const analyzed = analyzeParsedJob(entry.job, parsedFromContext, resumeSkills, settings);
+          return {
+            ...entry,
+            ...analyzed,
+            __networkHydrated: true,
+            __networkHydratedAt: Date.now(),
+            __networkHydratedMethod: "context"
+          };
+        }
+        return null;
+      })()
+        .catch(() => null)
+        .finally(() => {
+          entry.__networkHydrateInFlight = false;
+          entry.__networkHydratePromise = null;
+        });
+
+      entry.__networkHydratePromise = task;
+      return task;
+    }
+
+    async function hydrateEntryFromBackgroundProbe(entry) {
+      // Disabled intentionally for row-selection UX: background probe can create visible browser UI side effects.
+      return null;
+
+      if (!entry || !entry.job || IS_BACKGROUND_PROBE_TAB) return null;
+      if (typeof ns.fetchPostingViaBackgroundProbe !== "function") return null;
+
+      const now = Date.now();
+      if (entry.__backgroundProbeInFlight) return null;
+      if (entry.__backgroundProbeLastAttempt && now - entry.__backgroundProbeLastAttempt < 2200) return null;
+
+      entry.__backgroundProbeInFlight = true;
+      entry.__backgroundProbeLastAttempt = now;
+
+      try {
+        const response = await ns.fetchPostingViaBackgroundProbe({
+          pageUrl: location.href,
+          jobId: entry.job.jobId || "",
+          title: entry.job.title || ""
+        });
+        const parsed = response && response.parsed ? response.parsed : null;
+        if (!parsedLikelyMatchesSelectedJob(parsed, entry.job)) {
+          return null;
+        }
+
+        const hydratedJob = response && response.url ? { ...entry.job, url: response.url } : entry.job;
+        const analyzed = analyzeParsedJob(hydratedJob, parsed, resumeSkills, settings);
+        return {
+          ...entry,
+          ...analyzed,
+          job: hydratedJob,
+          __backgroundProbeHydrated: true,
+          __backgroundProbeHydratedAt: Date.now(),
+          __backgroundProbeSource: String((response && response.source) || "background")
+        };
+      } catch (_error) {
+        return null;
+      } finally {
+        entry.__backgroundProbeInFlight = false;
+      }
+    }
+
+    async function hydrateEntryFromSuppressedClick(entry) {
+      if (!entry || !entry.job || !entry.job.row) return null;
+      if (entry.__suppressedClickInFlight && entry.__suppressedClickPromise) return entry.__suppressedClickPromise;
+      const now = Date.now();
+      if (entry.__suppressedClickLastAttempt && now - entry.__suppressedClickLastAttempt < 1300) return null;
+      entry.__suppressedClickLastAttempt = now;
+      entry.__suppressedClickInFlight = true;
+
+      const task = (async () => {
+        const anchor = entry.job.anchor || pickPrimaryJobAnchor(entry.job.row, entry.job.title);
+        const clickTargets = [];
+        if (entry.job.row instanceof Element) clickTargets.push(entry.job.row);
+        if (anchor instanceof Element && !clickTargets.includes(anchor)) clickTargets.push(anchor);
+        if (clickTargets.length === 0) return null;
+
+        const htmlRoot = document.documentElement;
+        const captured = [];
+        const seenPayloads = new Set();
+        const pushCaptured = (text) => {
+          const value = String(text || "");
+          if (!value || value.length < 80) return;
+          if (seenPayloads.has(value)) return;
+          seenPayloads.add(value);
+          captured.push(value.slice(0, 250000));
+        };
+
+        const originalFetch = window.fetch;
+        const XHRCtor = window.XMLHttpRequest;
+        const originalXhrOpen = XHRCtor && XHRCtor.prototype ? XHRCtor.prototype.open : null;
+        const originalXhrSend = XHRCtor && XHRCtor.prototype ? XHRCtor.prototype.send : null;
+        const originalWindowOpen = window.open;
+
+        const restoreNetworkHooks = () => {
+          try {
+            if (window.fetch !== originalFetch) {
+              window.fetch = originalFetch;
+            }
+          } catch (_error) {}
+          try {
+            if (XHRCtor && originalXhrOpen) XHRCtor.prototype.open = originalXhrOpen;
+            if (XHRCtor && originalXhrSend) XHRCtor.prototype.send = originalXhrSend;
+          } catch (_error) {}
+          try {
+            if (window.open !== originalWindowOpen) {
+              window.open = originalWindowOpen;
+            }
+          } catch (_error) {}
+        };
+
+        try {
+          window.open = () => null;
+
+          if (typeof originalFetch === "function") {
+            window.fetch = async function wrappedFetch(...args) {
+              const response = await originalFetch.apply(this, args);
+              try {
+                const clone = response.clone();
+                const text = await clone.text();
+                pushCaptured(text);
+              } catch (_error) {}
+              return response;
+            };
+          }
+
+          if (XHRCtor && originalXhrOpen && originalXhrSend) {
+            XHRCtor.prototype.open = function patchedOpen(method, url, ...rest) {
+              this.__wwp_url = String(url || "");
+              this.__wwp_method = String(method || "GET");
+              return originalXhrOpen.call(this, method, url, ...rest);
+            };
+            XHRCtor.prototype.send = function patchedSend(body) {
+              try {
+                this.addEventListener("loadend", () => {
+                  try {
+                    const text = String(this.responseText || "");
+                    pushCaptured(text);
+                  } catch (_error) {}
+                });
+              } catch (_error) {}
+              return originalXhrSend.call(this, body);
+            };
+          }
+
+          htmlRoot.classList.add("wwp-suppress-posting-ui");
+          suppressSelectionHandlers = true;
+
+          const startedAt = Date.now();
+          const timeoutAt = startedAt + 4300;
+          let clickRound = 0;
+          while (Date.now() < timeoutAt) {
+            if (clickRound < 3) {
+              const target = clickTargets[clickRound % clickTargets.length];
+              if (target instanceof Element) {
+                try {
+                  if (target.tagName === "A") {
+                    target.addEventListener(
+                      "click",
+                      (event) => {
+                        event.preventDefault();
+                      },
+                      { capture: true, once: true }
+                    );
+                  }
+                  target.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+                  if (target === entry.job.row) {
+                    target.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, cancelable: true, view: window }));
+                  }
+                } catch (_error) {}
+              }
+              clickRound += 1;
+            }
+
+            await ns.wait(140);
+
+            const root = findPostingRootForEntry(entry);
+            if (root) {
+              const parsedLive = ns.parseJobPosting(root.outerHTML || root.textContent || "");
+              const parsedOk = parsedLikelyMatchesSelectedJob(parsedLive, entry.job) || looksLikeFullPostingParsed(parsedLive, entry.job.title);
+              if (parsedOk) {
+                const analyzed = analyzeParsedJob(entry.job, parsedLive, resumeSkills, settings);
+                closeLikelyPostingDialogInDocument(document);
+                return {
+                  ...entry,
+                  ...analyzed,
+                  __suppressedClickHydrated: true,
+                  __suppressedClickHydratedAt: Date.now()
+                };
+              }
+            }
+
+            for (const blob of captured) {
+              const parsedPayload = parsePostingResponsePayload(blob);
+              const parsedOk =
+                parsedLikelyMatchesSelectedJob(parsedPayload, entry.job) || looksLikeFullPostingParsed(parsedPayload, entry.job.title);
+              if (!parsedOk) continue;
+              const analyzed = analyzeParsedJob(entry.job, parsedPayload, resumeSkills, settings);
+              closeLikelyPostingDialogInDocument(document);
+              return {
+                ...entry,
+                ...analyzed,
+                __suppressedClickHydrated: true,
+                __suppressedClickHydratedAt: Date.now()
+              };
+            }
+          }
+        } catch (_error) {
+          return null;
+        } finally {
+          closeLikelyPostingDialogInDocument(document);
+          restoreNetworkHooks();
+          suppressSelectionHandlers = false;
+          htmlRoot.classList.remove("wwp-suppress-posting-ui");
+        }
+        return null;
+      })()
+        .catch(() => null)
+        .finally(() => {
+          entry.__suppressedClickInFlight = false;
+          entry.__suppressedClickPromise = null;
+        });
+
+      entry.__suppressedClickPromise = task;
+      return task;
     }
 
     scoredJobs.forEach((entry) => {
-      if (entry && entry.job) {
-        if (entry.job.key) byKey.set(entry.job.key, entry);
-        const titleKey = normalizeTitleKey(entry.job.title);
-        if (titleKey) byTitle.set(titleKey, entry);
-      }
+      rememberEntry(entry);
     });
 
     function render(entry, options) {
       const opts = options || {};
       if (!entry) return;
+      const selectedTitle = entry.job.title;
       if (selectedRow) selectedRow.classList.remove("wwp-row-selected");
       selectedRow = entry.job.row;
       selectedRow.classList.add("wwp-row-selected");
 
       selectedHost.innerHTML = "";
-      const blocks = buildSelectedJobCard(entry, settings);
-      selectedHost.appendChild(blocks.card);
-      selectedHost.appendChild(blocks.rec);
+      if (opts.showAccurate === true) {
+        const blocks = buildSelectedJobCard(entry, settings);
+        selectedHost.appendChild(blocks.card);
+        selectedHost.appendChild(blocks.rec);
+      } else {
+        const pending = buildSelectedJobPendingCard(entry);
+        selectedHost.appendChild(pending.card);
+      }
       tabs.activate("selected");
       if (panel && typeof panel.setSubtitle === "function") {
         panel.setSubtitle(`Selected: ${entry.job.title}`);
       }
 
-      if (opts.skipLiveRefresh) return;
+      if (opts.skipLiveRefresh || opts.requestLiveRefresh !== true) return;
+      if (panel && typeof panel.setSubtitle === "function") {
+        panel.setSubtitle(`Selected: ${selectedTitle} (waiting for posting open...)`);
+      }
       const ticket = ++renderNonce;
+      let hydratedFromLive = false;
       refreshEntryFromVisiblePosting(entry)
-        .then((refreshed) => {
-          if (!refreshed) return;
-          if (ticket !== renderNonce) return;
-          if (refreshed.job && refreshed.job.key) {
-            byKey.set(refreshed.job.key, refreshed);
+        .then((liveRefreshed) => {
+          if (ticket !== renderNonce) return null;
+          if (liveRefreshed) {
+            hydratedFromLive = true;
+            rememberEntry(liveRefreshed);
+            render(liveRefreshed, { showAccurate: true, skipLiveRefresh: true });
+            return null;
           }
-          const refreshedTitleKey = normalizeTitleKey(refreshed.job && refreshed.job.title);
-          if (refreshedTitleKey) {
-            byTitle.set(refreshedTitleKey, refreshed);
-          }
-          render(refreshed, { skipLiveRefresh: true });
+          return null;
         })
-        .catch((_error) => {});
+        .catch((_error) => {
+          if (ticket !== renderNonce) return;
+          if (panel && typeof panel.setSubtitle === "function") {
+            panel.setSubtitle(`Selected: ${selectedTitle} (open posting to load fit)`);
+          }
+        })
+        .finally(() => {
+          if (ticket !== renderNonce) return;
+          if (!panel || typeof panel.setSubtitle !== "function") return;
+          panel.setSubtitle(hydratedFromLive ? `Selected: ${selectedTitle}` : `Selected: ${selectedTitle} (open posting for accurate fit)`);
+        });
     }
 
     const sorted = scoredJobs.slice().sort((a, b) => b.rankingScore - a.rankingScore);
-    render(sorted[0] || scoredJobs[0]);
+    render(sorted[0] || scoredJobs[0], { skipLiveRefresh: true });
 
     scoredJobs.forEach((entry) => {
       const row = entry.job.row;
       if (!row) return;
       const onRowClick = () => {
-        render(entry);
+        if (suppressSelectionHandlers) return;
+        render(entry, { skipLiveRefresh: true });
       };
       row.addEventListener("click", onRowClick, { passive: true });
       cleanup.push(() => row.removeEventListener("click", onRowClick));
       if (entry.job.anchor) {
         const onAnchorClick = () => {
-          render(entry);
+          if (suppressSelectionHandlers) return;
+          render(entry, { requestLiveRefresh: true });
         };
         entry.job.anchor.addEventListener("click", onAnchorClick, { passive: true });
         cleanup.push(() => entry.job.anchor.removeEventListener("click", onAnchorClick));
@@ -1470,12 +3720,13 @@
     });
 
     const onDocumentClick = (event) => {
+      if (suppressSelectionHandlers) return;
       const target = event.target;
       if (!(target instanceof Element)) return;
 
       const row = target.closest("tr");
       if (row && row.dataset && row.dataset.wwpJobKey && byKey.has(row.dataset.wwpJobKey)) {
-        render(byKey.get(row.dataset.wwpJobKey));
+        render(byKey.get(row.dataset.wwpJobKey), { skipLiveRefresh: true });
         return;
       }
 
@@ -1483,12 +3734,20 @@
       if (heading) {
         const titleKey = normalizeTitleKey(heading.textContent || "");
         if (titleKey && byTitle.has(titleKey)) {
-          render(byTitle.get(titleKey));
+          render(byTitle.get(titleKey), { requestLiveRefresh: true });
         }
       }
     };
     document.addEventListener("click", onDocumentClick, true);
     cleanup.push(() => document.removeEventListener("click", onDocumentClick, true));
+    cleanup.push(() => {
+      if (probeState.iframe && document.contains(probeState.iframe)) {
+        probeState.iframe.remove();
+      }
+      probeState.iframe = null;
+      probeState.loadedUrl = "";
+      probeState.loading = null;
+    });
 
     return {
       render,
@@ -1739,8 +3998,8 @@
     const top = eligibleJobs.slice().sort((a, b) => b.rankingScore - a.rankingScore)[0];
     const metrics = ns.makeCard("Top Job Score Breakdown");
     metrics.appendChild(ns.makeProgressMetric("Skill Match", top.skillMatch));
-    metrics.appendChild(ns.makeProgressMetric("Viability", top.viability.score));
-    metrics.appendChild(ns.makeProgressMetric("Ranking Score", Math.max(0, Math.min(100, top.rankingScore))));
+    metrics.appendChild(ns.makeProgressMetric("Target Role Match", top.targetRoleMatch || 0));
+    metrics.appendChild(ns.makeProgressMetric("Overall Match", top.overallMatch || 0));
 
     const rec = ns.makeCard("Top Recommendation");
     const recTitle = document.createElement("p");
@@ -1788,6 +4047,12 @@
       })
     );
     tabs.appendToTab("flags", buildFlagsCard(eligibleJobs, gate.settings));
+  }
+
+  installProbeMessageListener();
+
+  if (IS_BACKGROUND_PROBE_TAB) {
+    return;
   }
 
   run().catch((error) => {

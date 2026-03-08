@@ -5,7 +5,7 @@
     settings: "wwpSettings",
     jobCache: "wwpJobAnalysisCache"
   };
-  const JOB_CACHE_SCHEMA_VERSION = 2;
+  const JOB_CACHE_SCHEMA_VERSION = 4;
 
   const DEFAULT_SETTINGS = {
     enabled: true,
