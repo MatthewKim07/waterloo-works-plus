@@ -110,17 +110,32 @@
 
     const parsed = ns.parseJobPosting(document);
     const resumeSkills = ns.getResumeSkillMap(gate.settings);
+    const combinedText = `${document.title || ""} ${parsed.fullText || ""}`;
 
-    const skillMatch = ns.computeSkillMatch(resumeSkills, parsed.requiredSkills, parsed.preferredSkills, parsed.fullText);
+    const skillMatch = ns.computeSkillMatch(resumeSkills, parsed.requiredSkills, parsed.preferredSkills, parsed.fullText, {
+      requiredLines: parsed.requiredSentences,
+      preferredLines: parsed.preferredSentences
+    });
+    const targetRoleMatch = ns.computeTargetRoleMatch(document.title || "", combinedText, gate.settings.preferences.targetRole);
+    const fieldAlignment = ns.computeDegreeFieldAlignment(parsed.constraints, gate.settings);
     const termCompatibility = estimateTermCompatibilityFromConstraints(parsed.constraints, gate.settings.preferences.workTerm);
-    const facultyAlignment = 50;
+    const facultyAlignment = fieldAlignment.score;
     const viability = ns.computeViabilityScore(skillMatch, termCompatibility, facultyAlignment, 0);
+    let overallMatch = skillMatch * 0.55 + targetRoleMatch * 0.3 + viability.score * 0.15;
+    if (fieldAlignment.preferredMismatch) overallMatch -= 8;
+    if (fieldAlignment.requiredMismatch) overallMatch -= 38;
+    overallMatch = ns.clamp(Math.round(overallMatch), 0, 100);
 
     const hard = ns.detectHardDisqualifier(parsed.constraints, gate.settings);
-    const flags = ns.getUserFlagsFromConstraints(parsed.constraints, gate.settings.preferences, { skillMatch });
+    const flags = ns.getUserFlagsFromConstraints(parsed.constraints, gate.settings.preferences, {
+      skillMatch,
+      targetRoleMatch,
+      fieldAlignmentPreferredMismatch: fieldAlignment.preferredMismatch,
+      fieldAlignmentRequiredMismatch: fieldAlignment.requiredMismatch
+    });
     flags.hardDisqualifier = hard.doNotApply;
     flags.hardReasons = hard.reasons;
-    const recommendation = ns.recommendAction(viability.score, flags);
+    const recommendation = ns.recommendAction(overallMatch, flags);
 
     const panel = ns.createShadowPanel({
       id: "wwp-posting-panel",
@@ -143,13 +158,15 @@
 
     const scoreCard = ns.makeCard("Scores");
     scoreCard.appendChild(ns.makeProgressMetric("Skill Match", skillMatch));
-    scoreCard.appendChild(ns.makeProgressMetric("Viability", viability.score));
+    scoreCard.appendChild(ns.makeProgressMetric("Target Role Match", targetRoleMatch));
+    scoreCard.appendChild(ns.makeProgressMetric("Overall Match", overallMatch));
 
     const breakdown = document.createElement("div");
     breakdown.className = "wwp-kv";
     [
       ["Work Term Compatibility", `${viability.breakdown.termCompatibility}%`],
       ["Faculty Alignment", `${viability.breakdown.facultyAlignment}%`],
+      ["Viability", `${viability.score}%`],
       ["Selectivity Adj.", `${viability.breakdown.selectivityAdjustment}`]
     ].forEach(([k, v]) => {
       const row = document.createElement("div");

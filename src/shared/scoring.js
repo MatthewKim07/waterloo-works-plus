@@ -1,5 +1,52 @@
 (function initScoring(global) {
   const ns = (global.WWP = global.WWP || {});
+  let aliasToKeyCache = null;
+
+  const SKILL_EQUIVALENCE = {
+    llm: ["openai api", "machine learning", "nlp"],
+    "openai api": ["llm"],
+    sql: ["postgresql", "mysql", "mongodb"],
+    "backend engineering": ["fastapi", "node.js", "express", "flask", "django", "nestjs", "rest api"],
+    "frontend engineering": ["react", "next.js", "vue", "angular", "tailwind css", "html", "css"],
+    "ci/cd": ["git", "github actions"],
+    authentication: ["oauth", "jwt"]
+  };
+
+  function escapeRegex(text) {
+    return String(text || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  function ensureAliasLookup() {
+    if (aliasToKeyCache) return aliasToKeyCache;
+    const map = new Map();
+    for (const entry of ns.SKILLS_DICTIONARY || []) {
+      const key = String((entry && entry.key) || "").trim();
+      if (!key) continue;
+      const keyNorm = ns.normalizeToken(key);
+      if (keyNorm) map.set(keyNorm, key);
+      const aliases = ns.unique([key, ...((entry && entry.aliases) || [])]);
+      aliases.forEach((aliasRaw) => {
+        const alias = ns.normalizeToken(aliasRaw);
+        if (!alias) return;
+        if (!map.has(alias)) map.set(alias, key);
+      });
+    }
+    aliasToKeyCache = map;
+    return map;
+  }
+
+  function resolveSkillKey(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    const dict = ns.SKILLS_DICTIONARY || [];
+    const direct = dict.find((entry) => String(entry && entry.key) === raw);
+    if (direct) return direct.key;
+
+    const lookup = ensureAliasLookup();
+    const norm = ns.normalizeToken(raw);
+    if (norm && lookup.has(norm)) return lookup.get(norm);
+    return raw;
+  }
 
   function asSkillMap(skills) {
     if (skills instanceof Map) return skills;
@@ -14,7 +61,78 @@
   }
 
   function findSkillEntryByKey(key) {
-    return (ns.SKILLS_DICTIONARY || []).find((item) => item.key === key) || null;
+    const resolved = resolveSkillKey(key);
+    return (ns.SKILLS_DICTIONARY || []).find((item) => item.key === resolved) || null;
+  }
+
+  function buildResumeCanonicalSet(resumeMap) {
+    const out = new Set();
+    if (!resumeMap || typeof resumeMap.forEach !== "function") return out;
+
+    const lookup = ensureAliasLookup();
+    resumeMap.forEach((_value, rawSkill) => {
+      const canonical = resolveSkillKey(rawSkill);
+      if (canonical) out.add(canonical);
+
+      const norm = ns.normalizeToken(rawSkill);
+      if (norm && lookup.has(norm)) {
+        out.add(lookup.get(norm));
+      }
+    });
+    return out;
+  }
+
+  function hasResumeSkill(resumeCanonicalSet, skillKey) {
+    const canonical = resolveSkillKey(skillKey);
+    if (!canonical) return false;
+    if (resumeCanonicalSet.has(canonical)) return true;
+
+    const equivalents = SKILL_EQUIVALENCE[canonical] || [];
+    return equivalents.some((alt) => resumeCanonicalSet.has(resolveSkillKey(alt)));
+  }
+
+  function extractSkillKeysFromText(text) {
+    const lower = String(text || "").toLowerCase();
+    if (!lower) return [];
+    const found = [];
+
+    for (const entry of ns.SKILLS_DICTIONARY || []) {
+      const aliases = ns.unique([entry.key, ...((entry && entry.aliases) || [])]);
+      const hit = aliases.some((aliasRaw) => {
+        const alias = ns.normalizeToken(aliasRaw);
+        if (!alias) return false;
+        const match = lower.match(new RegExp(`\\b${escapeRegex(alias)}\\b`, "i"));
+        return !!match;
+      });
+      if (hit) found.push(entry.key);
+    }
+
+    return ns.unique(found);
+  }
+
+  function computeLineCoverageScore(lines, resumeCanonicalSet, tone) {
+    const list = Array.isArray(lines) ? lines : [];
+    let total = 0;
+    let achieved = 0;
+
+    list.forEach((line) => {
+      const text = String(line || "").trim();
+      if (!text) return;
+      const skills = extractSkillKeysFromText(text);
+      if (!skills.length) return;
+
+      const lower = text.toLowerCase();
+      const hasOrGroup = /\bor\b|and\/or|\//.test(lower) && skills.length > 1;
+      const matchedCount = skills.filter((skill) => hasResumeSkill(resumeCanonicalSet, skill)).length;
+      const satisfaction = hasOrGroup ? (matchedCount > 0 ? 1 : 0) : matchedCount / skills.length;
+      const baseWeight = tone === "required" ? 2.2 : 1.1;
+      const lineWeight = baseWeight + Math.min(0.8, skills.length * 0.14);
+      total += lineWeight;
+      achieved += lineWeight * satisfaction;
+    });
+
+    if (!total) return null;
+    return (achieved / total) * 100;
   }
 
   function countAliasHits(text, aliases) {
@@ -23,7 +141,7 @@
     for (const alias of aliases || []) {
       const token = ns.normalizeToken(alias);
       if (!token) continue;
-      const escaped = token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const escaped = escapeRegex(token);
       const match = lower.match(new RegExp(`\\b${escaped}\\b`, "g"));
       hits += match ? match.length : 0;
     }
@@ -67,24 +185,31 @@
     return category !== "soft-skill" && category !== "process";
   }
 
-  ns.computeSkillMatch = function computeSkillMatch(resumeSkills, jobRequired, jobPreferred, fullText) {
+  ns.computeSkillMatch = function computeSkillMatch(resumeSkills, jobRequired, jobPreferred, fullText, options) {
+    const opts = options || {};
     const resumeMap = asSkillMap(resumeSkills);
-    const required = ns.unique(jobRequired || []);
-    const preferred = ns.unique(jobPreferred || []);
+    const required = ns.unique((jobRequired || []).map((skill) => resolveSkillKey(skill)).filter(Boolean));
+    const preferred = ns
+      .unique((jobPreferred || []).map((skill) => resolveSkillKey(skill)).filter(Boolean))
+      .filter((skill) => !required.includes(skill));
     const fullTextValue = String(fullText || "");
+    const hasExplicitSkills = required.length + preferred.length > 0;
+    const resumeCanonicalSet = buildResumeCanonicalSet(resumeMap);
+    const requiredLines = Array.isArray(opts.requiredLines) ? opts.requiredLines : [];
+    const preferredLines = Array.isArray(opts.preferredLines) ? opts.preferredLines : [];
 
     const jobWeights = new Map();
 
     for (const key of required) {
       const entry = findSkillEntryByKey(key);
       const categoryFactor = getCategoryMultiplier(entry);
-      jobWeights.set(key, (jobWeights.get(key) || 0) + 4.2 * categoryFactor);
+      jobWeights.set(key, (jobWeights.get(key) || 0) + 5.2 * categoryFactor);
     }
 
     for (const key of preferred) {
       const entry = findSkillEntryByKey(key);
       const categoryFactor = getCategoryMultiplier(entry);
-      jobWeights.set(key, (jobWeights.get(key) || 0) + 2.0 * categoryFactor);
+      jobWeights.set(key, (jobWeights.get(key) || 0) + 1.65 * categoryFactor);
     }
 
     const mentionWeights = deriveMentionWeightsFromText(fullTextValue);
@@ -100,10 +225,10 @@
     for (const [key, mentionWeight] of mentionWeights.entries()) {
       const existing = jobWeights.get(key) || 0;
       if (existing > 0) {
-        jobWeights.set(key, existing + Math.min(1.6, mentionWeight * 0.35));
-      } else {
+        jobWeights.set(key, existing + Math.min(1.25, mentionWeight * 0.3));
+      } else if (!hasExplicitSkills) {
         // Keep full-text inferred skills lighter than explicit required/preferred tags.
-        jobWeights.set(key, Math.min(2.6, mentionWeight));
+        jobWeights.set(key, Math.min(2.2, mentionWeight));
       }
     }
 
@@ -122,7 +247,7 @@
 
     for (const [skill, weight] of jobWeights.entries()) {
       total += weight;
-      if ((resumeMap.get(skill) || 0) > 0) {
+      if (hasResumeSkill(resumeCanonicalSet, skill)) {
         achieved += weight;
       }
     }
@@ -130,15 +255,24 @@
     if (total <= 0) return 0;
     let score = (achieved / total) * 100;
 
+    const requiredLineScore = computeLineCoverageScore(requiredLines, resumeCanonicalSet, "required");
+    const preferredLineScore = computeLineCoverageScore(preferredLines, resumeCanonicalSet, "preferred");
+    if (requiredLineScore != null) {
+      score = score * 0.8 + requiredLineScore * 0.2;
+    }
+    if (preferredLineScore != null) {
+      score = score * 0.9 + preferredLineScore * 0.1;
+    }
+
     // When explicit technical required skills are present, coverage should drive score more strongly.
     const technicalRequired = required.filter((skill) => isTechnicalRequiredSkill(skill));
     if (technicalRequired.length >= 3) {
-      const matchedRequired = technicalRequired.filter((skill) => (resumeMap.get(skill) || 0) > 0).length;
+      const matchedRequired = technicalRequired.filter((skill) => hasResumeSkill(resumeCanonicalSet, skill)).length;
       const requiredCoverage = matchedRequired / technicalRequired.length;
       if (requiredCoverage >= 0.75) {
-        score = Math.max(score, 42 + requiredCoverage * 52);
+        score = Math.max(score, 44 + requiredCoverage * 50);
       } else if (requiredCoverage >= 0.55) {
-        score = Math.max(score, 30 + requiredCoverage * 46);
+        score = Math.max(score, 32 + requiredCoverage * 44);
       }
     }
 
@@ -293,6 +427,14 @@
     if (activeFlags.facultyWeak) {
       reasons.push("Faculty alignment is weak in available hiring history.");
     }
+    if (activeFlags.roleMismatch) {
+      reasons.push("Target role alignment is weak for this posting.");
+    }
+    if (activeFlags.fieldMismatchRequired) {
+      reasons.push("Required degree field appears misaligned with your profile.");
+    } else if (activeFlags.fieldMismatchPreferred) {
+      reasons.push("Preferred degree field leans away from your profile.");
+    }
     if (activeFlags.eightMonthPreferred && activeFlags.userTermLength === "4") {
       reasons.push("Posting appears to prefer an 8-month commitment.");
     }
@@ -304,8 +446,8 @@
     }
 
     if (reasons.length < 2) {
-      if (value >= 70) reasons.push("Composite viability score is favorable compared to baseline.");
-      if (value < 50) reasons.push("Composite viability score indicates elevated selectivity risk.");
+      if (value >= 70) reasons.push("Composite overall match is favorable compared to baseline.");
+      if (value < 50) reasons.push("Composite overall match indicates elevated mismatch risk.");
     }
 
     return {
