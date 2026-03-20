@@ -187,6 +187,30 @@ h2 {
   font-size: 0.9rem;
 }
 
+.profile-controls {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.profile-controls-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) max-content;
+  align-items: end;
+  gap: 12px;
+  justify-content: start;
+}
+
+.profile-controls-row select {
+  min-width: 0;
+}
+
+.profile-controls-row button {
+  min-height: 44px;
+  padding-inline: 18px;
+  white-space: nowrap;
+}
+
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
@@ -584,6 +608,14 @@ button.secondary {
 
   .actions {
     flex-direction: column;
+  }
+
+  .profile-controls-row {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-controls-row button {
+    justify-self: start;
   }
 
   .skill-add-row {
