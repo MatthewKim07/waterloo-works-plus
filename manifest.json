@@ -57,6 +57,7 @@
         "src/shared/autofill-field-mapper.js",
         "src/shared/application-detectors.js",
         "src/shared/application-reconciler.js",
+        "src/shared/logger.js",
         "src/content/common.js",
         "src/content/listings.js",
         "src/content/posting.js",
