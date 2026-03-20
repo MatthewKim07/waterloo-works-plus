@@ -79,9 +79,53 @@
     document.documentElement.appendChild(wrap);
   }
 
+  function wireSubmissionWatch() {
+    document.addEventListener(
+      "submit",
+      () => {
+        window.setTimeout(async () => {
+          const gate = await ns.getSettingsForPage();
+          if (gate.disabled || !ns.isFeatureEnabled(gate.settings, "applicationTracker")) return;
+          if (!ns.applicationDetectors || typeof ns.applicationDetectors.looksLikeSubmissionSuccess !== "function") return;
+          if (!ns.applicationStore || typeof ns.applicationStore.upsertApplication !== "function") return;
+          if (!ns.jobIdentity || typeof ns.jobIdentity.makeJobKey !== "function") return;
+          if (!ns.applicationDetectors.looksLikeSubmissionSuccess(document)) return;
+
+          const jobKey = ns.jobIdentity.makeJobKey({
+            postingUrl: location.href,
+            fallback: location.pathname
+          });
+          const tid = jobKey.replace(/[^a-z0-9]+/gi, "-").slice(0, 48);
+          const id = `app-${tid}-${Date.now()}`;
+          await ns.applicationStore.upsertApplication({
+            id,
+            jobKey,
+            postingUrl: location.href,
+            title: document.title || "Unknown posting",
+            employer: "",
+            status: ns.applicationStore.STATUS.APPLIED,
+            events: [
+              { type: "submitted", at: Date.now(), source: "dom-heuristic" }
+            ],
+            evidence: { url: location.href }
+          });
+        }, 900);
+      },
+      true
+    );
+  }
+
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", () => tryInject(), { once: true });
+    document.addEventListener(
+      "DOMContentLoaded",
+      () => {
+        tryInject();
+        wireSubmissionWatch();
+      },
+      { once: true }
+    );
   } else {
     tryInject();
+    wireSubmissionWatch();
   }
 })(globalThis);
