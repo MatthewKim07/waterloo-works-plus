@@ -2873,43 +2873,49 @@
 
   function buildTopRankingsCard(scoredJobs, handlers) {
     const onSelect = handlers && typeof handlers.onSelect === "function" ? handlers.onSelect : null;
-    const card = ns.makeCard("Top Ranked Jobs");
-    const list = document.createElement("ul");
-    list.className = "wwp-list";
+    const resumeMap = handlers && handlers.resumeMap ? handlers.resumeMap : null;
+    const card = document.createElement("div");
+    card.style.display = "grid";
+    card.style.gap = "10px";
 
-    scoredJobs
-      .slice()
-      .sort((a, b) => b.rankingScore - a.rankingScore)
-      .slice(0, 10)
-      .forEach((entry, index) => {
-        const li = document.createElement("li");
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.textContent = `${index + 1}. ${entry.job.title} @ ${entry.job.company} | Skill ${entry.skillMatch}% | Overall ${entry.overallMatch}%`;
-        btn.style.width = "100%";
-        btn.style.textAlign = "left";
-        btn.style.border = "1px solid #334155";
-        btn.style.background = "#0b1220";
-        btn.style.color = "#dbeafe";
-        btn.style.borderRadius = "8px";
-        btn.style.padding = "8px";
-        btn.style.cursor = "pointer";
-        btn.style.font = "inherit";
-        btn.addEventListener("click", () => {
-          if (onSelect) onSelect(entry);
-          openJobEntry(entry);
-        });
-        btn.addEventListener("mouseover", () => {
-          btn.style.borderColor = "#60a5fa";
-        });
-        btn.addEventListener("mouseout", () => {
-          btn.style.borderColor = "#334155";
-        });
-        li.appendChild(btn);
-        list.appendChild(li);
+    const sorted = scoredJobs.slice().sort(function (a, b) { return b.rankingScore - a.rankingScore; });
+
+    // Split into priority tiers
+    const applyNow = [];
+    const worthApplying = [];
+    const lowPriority = [];
+
+    sorted.forEach(function (entry) {
+      var m = entry.overallMatch || 0;
+      if (entry.hardDisqualifier) return;
+      if (m >= 68) applyNow.push(entry);
+      else if (m >= 42) worthApplying.push(entry);
+      else lowPriority.push(entry);
+    });
+
+    function renderTier(label, entries, maxItems) {
+      if (!entries.length) return;
+      card.appendChild(ns.makeSectionLabel(label));
+      entries.slice(0, maxItems || 10).forEach(function (entry) {
+        card.appendChild(buildJobCardForEntry(entry, resumeMap, {
+          onApply: function () { openJobEntry(entry); },
+          onSelect: onSelect ? function () { onSelect(entry); } : null,
+          onClick: onSelect ? function () { onSelect(entry); } : null
+        }));
       });
+    }
 
-    card.appendChild(list);
+    renderTier("Apply Now", applyNow, 10);
+    renderTier("Worth Applying", worthApplying, 10);
+    renderTier("Low Priority", lowPriority, 5);
+
+    if (!applyNow.length && !worthApplying.length && !lowPriority.length) {
+      var note = document.createElement("p");
+      note.className = "wwp-inline-note";
+      note.textContent = "No eligible jobs to rank.";
+      card.appendChild(note);
+    }
+
     return card;
   }
 
@@ -4315,7 +4321,8 @@
     tabs.appendToTab(
       "rankings",
       buildTopRankingsCard(eligibleJobs, {
-        onSelect: selection && selection.render ? selection.render : null
+        onSelect: selection && selection.render ? selection.render : null,
+        resumeMap: resumeMap
       })
     );
     tabs.appendToTab("flags", buildFlagsCard(eligibleJobs, gate.settings));
