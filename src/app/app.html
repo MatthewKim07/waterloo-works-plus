@@ -19,6 +19,7 @@
         <nav>
           <a href="#extension">Extension</a>
           <a href="#resume">Resume</a>
+          <a href="#tracker">Applications</a>
           <a href="#prefs">Preferences</a>
         </nav>
       </aside>
@@ -105,6 +106,16 @@
           </div>
         </section>
 
+        <section class="card" id="tracker">
+          <h2>Applications</h2>
+          <p class="section-note">
+            We record successful submits when WW shows a confirmation (turn on tracking in Extension). Opening “My applications” style pages can refresh
+            statuses — still best-effort.
+          </p>
+          <div id="trackerMount"></div>
+          <p id="trackerStatus" class="status"></p>
+        </section>
+
         <section class="card" id="prefs">
           <h2>Preferences</h2>
           <p class="section-note">Set your baseline goals. We use these to re-rank and recommend jobs.</p>
@@ -162,6 +173,8 @@
     <script src="../shared/utils.js"></script>
     <script src="../vendor/fflate.js"></script>
     <script src="../shared/resume-parser.js"></script>
+    <script src="../shared/application-store.js"></script>
+    <script src="../app/tracker-dashboard.js"></script>
     <script src="../options/options.js"></script>
   </body>
 </html>
