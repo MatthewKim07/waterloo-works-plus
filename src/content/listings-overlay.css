@@ -1,0 +1,55 @@
+/* Listings row badges — loaded from extension package */
+
+.wwp-row-badge-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+  align-items: center;
+}
+
+.wwp-row-badge {
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(15, 23, 42, 0.08);
+  color: #0f172a;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wwp-badge-fit {
+  font-weight: 700;
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+}
+
+.wwp-badge-term {
+  background: rgba(124, 58, 237, 0.12);
+  color: #6d28d9;
+}
+
+.wwp-badge-skill {
+  background: rgba(5, 150, 105, 0.12);
+  color: #047857;
+}
+
+.wwp-badge-docs {
+  background: rgba(217, 119, 6, 0.14);
+  color: #b45309;
+}
+
+tr.wwp-row-fit-strong > td {
+  box-shadow: inset 0 0 0 2px rgba(34, 197, 94, 0.35);
+}
+
+tr.wwp-row-fit-weak > td {
+  box-shadow: inset 0 0 0 2px rgba(248, 113, 113, 0.3);
+}
+
+tr.wwp-row-fit-block > td {
+  box-shadow: inset 0 0 0 2px rgba(239, 68, 68, 0.45);
+}
