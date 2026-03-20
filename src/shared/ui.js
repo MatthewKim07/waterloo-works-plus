@@ -16,8 +16,13 @@
         border: 1px solid #1e293b;
         border-radius: 14px;
         font: 13px/1.4 -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif;
-        box-shadow: 0 10px 30px rgba(2, 6, 23, 0.35);
+        box-shadow: 0 12px 40px rgba(2, 6, 23, 0.45);
+        scrollbar-width: thin;
+        scrollbar-color: #334155 transparent;
       }
+      .wwp-panel::-webkit-scrollbar { width: 6px; }
+      .wwp-panel::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+      .wwp-panel::-webkit-scrollbar-track { background: transparent; }
       .wwp-header {
         position: sticky;
         top: 0;
@@ -26,14 +31,14 @@
         align-items: center;
         justify-content: space-between;
         gap: 8px;
-        padding: 12px;
-        background: linear-gradient(135deg, #0f172a, #1d4ed8);
+        padding: 10px 12px;
+        background: linear-gradient(135deg, #0c1222 0%, #1a2744 50%, #1d4ed8 100%);
         border-bottom: 1px solid #1e293b;
       }
-      .wwp-title { margin: 0; font-size: 14px; font-weight: 700; }
-      .wwp-subtitle { margin: 0; font-size: 11px; opacity: 0.85; }
+      .wwp-title { margin: 0; font-size: 14px; font-weight: 800; letter-spacing: -0.01em; }
+      .wwp-subtitle { margin: 0; font-size: 11px; opacity: 0.75; }
       .wwp-body { padding: 12px; display: grid; gap: 10px; }
-      .wwp-card { border: 1px solid #1f2937; border-radius: 10px; padding: 10px; background: #111827; }
+      .wwp-card { border: 1px solid #1f2937; border-radius: 10px; padding: 10px; background: #111827; transition: border-color 100ms ease; }
       .wwp-section-title { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #93c5fd; }
       .wwp-chip-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
       .wwp-chip { padding: 3px 8px; border-radius: 999px; font-size: 11px; border: 1px solid #334155; background: #1f2937; }
@@ -160,6 +165,7 @@
         font-size: 11px;
         cursor: pointer;
       }
+      .wwp-tab-btn:hover { border-color: #475569; color: #e2e8f0; }
       .wwp-tab-btn.active { border-color: #60a5fa; color: #dbeafe; background: #1e293b; }
       .wwp-tab-pane { display: none; gap: 10px; }
       .wwp-tab-pane.active { display: grid; }
@@ -172,8 +178,9 @@
         background: #111827;
         display: grid;
         gap: 6px;
+        transition: border-color 100ms ease, background 100ms ease;
       }
-      .wwp-job-card:hover { border-color: #334155; }
+      .wwp-job-card:hover { border-color: #334155; background: #151d2e; }
       .wwp-job-card .wwp-jc-title {
         font-size: 13px;
         font-weight: 700;
