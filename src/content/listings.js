@@ -29,6 +29,7 @@
       .wwp-row-hidden-by-smart-search { display: none !important; }
       .wwp-row-hidden-by-term-filter { display: none !important; }
       .wwp-row-hidden-by-hard-filter { display: none !important; }
+      .wwp-listings-pending { opacity: 0 !important; pointer-events: none !important; }
       html.wwp-suppress-posting-ui .ui-dialog,
       html.wwp-suppress-posting-ui .ui-widget-overlay,
       html.wwp-suppress-posting-ui [role='dialog'],
@@ -1554,7 +1555,13 @@
       if (row.__wwpEntry) {
         delete row.__wwpEntry;
       }
+      row.querySelectorAll(":scope .wwp-row-badges, :scope .wwp-row-skills").forEach((node) => node.remove());
     });
+  }
+
+  function setListingsContainerPending(container, pending) {
+    if (!(container instanceof Element)) return;
+    container.classList.toggle("wwp-listings-pending", !!pending);
   }
 
   function computeJobSetSignature(jobs) {
@@ -2454,61 +2461,17 @@
       resumeSkills = parsedResume.skills || new Map();
     }
 
-    const knownPostingUrls = ns.unique(jobs.map((job) => (job && job.url ? job.url : "")).filter(Boolean));
-
-    const results = await ns.runWithConcurrency(jobs, 3, async (job, index) => {
-      if (index > 0) {
-        await ns.wait(120);
-      }
-
-      let parsed = null;
-      let effectiveJob = job;
-
-      if (job.url) {
-        const canUseCache = isLikelyPostingUrl(job.url);
-        const cached = canUseCache ? await ns.getCachedJobAnalysis(job.url) : null;
-        parsed = cached || null;
-        if (parsed && !parsedLikelyMatchesSelectedJob(parsed, job)) {
-          parsed = null;
-        }
-
-        if (!parsed) {
-          try {
-            const html = await ns.fetchJobHtml(job.url);
-            const parsedFromFetch = parsePostingResponsePayload(html);
-            if (parsedLikelyMatchesSelectedJob(parsedFromFetch, job)) {
-              parsed = parsedFromFetch;
-              if (canUseCache) {
-                await ns.setCachedJobAnalysis(job.url, parsed);
-              }
-            }
-          } catch (_error) {
-            parsed = null;
-          }
-        }
-      }
-
-      if (!parsed || !looksLikeFullPostingParsed(parsed, effectiveJob.title)) {
-        const replayHydrated = await hydrateJobFromReplayRequests(effectiveJob, knownPostingUrls);
-        if (replayHydrated && replayHydrated.parsed) {
-          effectiveJob = replayHydrated.job || effectiveJob;
-          parsed = replayHydrated.parsed;
-        }
-      }
-
-      if (!parsed) {
-        // Fallback: analyze using visible row content only when posting fetch is unavailable.
-        parsed = ns.parseJobPosting(effectiveJob.snippet || ns.getTextFromElement(effectiveJob.row));
-      }
-
-      const analyzed = analyzeParsedJob(effectiveJob, parsed, resumeSkills, settings);
+    const results = jobs.map((job, index) => {
+      // Keep the initial list render fast: rank from visible row content first.
+      const parsed = ns.parseJobPosting(job.snippet || ns.getTextFromElement(job.row));
+      const analyzed = analyzeParsedJob(job, parsed, resumeSkills, settings);
 
       if (panel) {
         panel.setSubtitle(`Analyzed ${index + 1} / ${jobs.length} postings`);
       }
 
       return {
-        job: effectiveJob,
+        job,
         ...analyzed
       };
     });
@@ -4382,148 +4345,153 @@
     runtime.ignoreChangeDetectionUntil = Date.now() + 1800;
     clearAllRowAnnotations();
     clearTabs();
+    setListingsContainerPending(container, true);
 
-    const summaryCard = ns.makeCard("Status");
-    summaryCard.innerHTML += `<p class="wwp-inline-note">Found ${jobs.length} co-op job rows in the primary results table. Re-ranking by resume, constraints, and preferences.</p>`;
-    tabs.appendToTab("overview", summaryCard);
+    try {
+      const summaryCard = ns.makeCard("Status");
+      summaryCard.innerHTML += `<p class="wwp-inline-note">Found ${jobs.length} co-op job rows in the primary results table. Re-ranking by resume, constraints, and preferences.</p>`;
+      tabs.appendToTab("overview", summaryCard);
 
-    const scoredJobs = await analyzeJobs(jobs, gate.settings, panel);
-    if (!scoredJobs.length) {
-      panel.setSubtitle("No analyzable postings found");
-      return;
-    }
-
-    const termFiltered = applyStrictPreferredTermFilter(scoredJobs, gate.settings.preferences.preferredTermLength);
-    const hardFiltered = applyHardDisqualifierFilter(termFiltered.filtered);
-    const eligibleJobs = hardFiltered.filtered;
-
-    if (!eligibleJobs.length) {
-      const noneCard = ns.makeCard("Term-Length Filter");
-      noneCard.innerHTML += `<p class="wwp-inline-note">No postings remain after strict filters (term-length + auto-reject eligibility rules).</p>`;
-      noneCard.innerHTML += `<p class="wwp-inline-note">Try changing term-length to "Either" or updating work term / profile preferences.</p>`;
-      tabs.appendToTab("overview", noneCard);
-      panel.setSubtitle("No jobs after strict eligibility filters");
-      return;
-    }
-
-    eligibleJobs.forEach((entry) => annotateRow(entry.job, entry));
-    reorderRows(eligibleJobs, container);
-    runtime.currentSignature = computeJobSetSignature(eligibleJobs.map((entry) => entry.job));
-
-    panel.setSubtitle(`Ranked ${eligibleJobs.length} jobs`);
-
-    const resumeMap = ns.getResumeSkillMap(gate.settings);
-    const sorted = eligibleJobs.slice().sort((a, b) => b.rankingScore - a.rankingScore);
-
-    // --- Application Snapshot ---
-    const strongCount = eligibleJobs.filter((e) => (e.overallMatch || 0) >= 72).length;
-    const decentCount = eligibleJobs.filter((e) => {
-      const m = e.overallMatch || 0;
-      return m >= 45 && m < 72;
-    }).length;
-    const weakCount = eligibleJobs.filter((e) => (e.overallMatch || 0) < 45).length;
-
-    tabs.appendToTab("overview", ns.makeStatRow([
-      { value: String(eligibleJobs.length), label: "Analyzed" },
-      { value: String(strongCount), label: "Strong" },
-      { value: String(decentCount), label: "Decent" },
-      { value: String(weakCount), label: "Low Fit" }
-    ]));
-
-    // --- Top Matches ---
-    const topMatchesCard = ns.makeCard("Top Matches");
-    sorted.slice(0, 5).forEach(function (entry) {
-      topMatchesCard.appendChild(buildJobCardForEntry(entry, resumeMap, {
-        onApply: function () { openJobEntry(entry); },
-        onSelect: null
-      }));
-    });
-    tabs.appendToTab("overview", topMatchesCard);
-
-    // --- Key Insights ---
-    const allMissing = new Map();
-    const allStrong = new Map();
-    eligibleJobs.forEach(function (entry) {
-      var reqSkills = (entry.parsed && Array.isArray(entry.parsed.requiredSkills)) ? entry.parsed.requiredSkills : [];
-      reqSkills.forEach(function (skill) {
-        if (resumeMap && resumeMap.has(skill)) {
-          allStrong.set(skill, (allStrong.get(skill) || 0) + 1);
-        } else {
-          allMissing.set(skill, (allMissing.get(skill) || 0) + 1);
-        }
-      });
-    });
-    var topMissing = Array.from(allMissing.entries()).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 5);
-    var topStrong = Array.from(allStrong.entries()).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 5);
-
-    if (topMissing.length || topStrong.length) {
-      const insightCard = ns.makeCard("Key Insights");
-      if (topMissing.length) {
-        insightCard.appendChild(ns.makeInsightBox(
-          "Most requested skills you're missing: " + topMissing.map(function (e) { return e[0]; }).join(", "),
-          "warn"
-        ));
+      const scoredJobs = await analyzeJobs(jobs, gate.settings, panel);
+      if (!scoredJobs.length) {
+        panel.setSubtitle("No analyzable postings found");
+        return;
       }
-      if (topStrong.length) {
-        var strongNote = document.createElement("p");
-        strongNote.className = "wwp-inline-note";
-        strongNote.style.color = "#2e7d32";
-        strongNote.textContent = "Your strongest matches: " + topStrong.map(function (e) { return e[0]; }).join(", ");
-        insightCard.appendChild(strongNote);
-      }
-      tabs.appendToTab("overview", insightCard);
-    }
 
-    // --- Jobs to Reconsider ---
-    const lowFitInteresting = sorted.filter(function (entry) {
-      var m = entry.overallMatch || 0;
-      return m >= 30 && m < 50 && (entry.targetRoleMatch || 0) >= 50;
-    }).slice(0, 3);
-    if (lowFitInteresting.length) {
-      const reconsiderCard = ns.makeCard("Worth Reconsidering");
-      var recNote = document.createElement("p");
-      recNote.className = "wwp-inline-note";
-      recNote.textContent = "Low overall fit but strong role alignment — may be worth a reach application.";
-      reconsiderCard.appendChild(recNote);
-      lowFitInteresting.forEach(function (entry) {
-        reconsiderCard.appendChild(buildJobCardForEntry(entry, resumeMap, {
-          onApply: function () { openJobEntry(entry); }
+      const termFiltered = applyStrictPreferredTermFilter(scoredJobs, gate.settings.preferences.preferredTermLength);
+      const hardFiltered = applyHardDisqualifierFilter(termFiltered.filtered);
+      const eligibleJobs = hardFiltered.filtered;
+
+      if (!eligibleJobs.length) {
+        const noneCard = ns.makeCard("Term-Length Filter");
+        noneCard.innerHTML += `<p class="wwp-inline-note">No postings remain after strict filters (term-length + auto-reject eligibility rules).</p>`;
+        noneCard.innerHTML += `<p class="wwp-inline-note">Try changing term-length to "Either" or updating work term / profile preferences.</p>`;
+        tabs.appendToTab("overview", noneCard);
+        panel.setSubtitle("No jobs after strict eligibility filters");
+        return;
+      }
+
+      eligibleJobs.forEach((entry) => annotateRow(entry.job, entry));
+      reorderRows(eligibleJobs, container);
+      runtime.currentSignature = computeJobSetSignature(eligibleJobs.map((entry) => entry.job));
+
+      panel.setSubtitle(`Ranked ${eligibleJobs.length} jobs`);
+
+      const resumeMap = ns.getResumeSkillMap(gate.settings);
+      const sorted = eligibleJobs.slice().sort((a, b) => b.rankingScore - a.rankingScore);
+
+      // --- Application Snapshot ---
+      const strongCount = eligibleJobs.filter((e) => (e.overallMatch || 0) >= 72).length;
+      const decentCount = eligibleJobs.filter((e) => {
+        const m = e.overallMatch || 0;
+        return m >= 45 && m < 72;
+      }).length;
+      const weakCount = eligibleJobs.filter((e) => (e.overallMatch || 0) < 45).length;
+
+      tabs.appendToTab("overview", ns.makeStatRow([
+        { value: String(eligibleJobs.length), label: "Analyzed" },
+        { value: String(strongCount), label: "Strong" },
+        { value: String(decentCount), label: "Decent" },
+        { value: String(weakCount), label: "Low Fit" }
+      ]));
+
+      // --- Top Matches ---
+      const topMatchesCard = ns.makeCard("Top Matches");
+      sorted.slice(0, 5).forEach(function (entry) {
+        topMatchesCard.appendChild(buildJobCardForEntry(entry, resumeMap, {
+          onApply: function () { openJobEntry(entry); },
+          onSelect: null
         }));
       });
-      tabs.appendToTab("overview", reconsiderCard);
-    }
+      tabs.appendToTab("overview", topMatchesCard);
 
-    // --- Filter Summary ---
-    if (termFiltered.hiddenCount > 0 || hardFiltered.hiddenCount > 0) {
-      var filterNote = document.createElement("p");
-      filterNote.className = "wwp-inline-note";
-      var parts = [];
-      if (termFiltered.hiddenCount > 0) parts.push(termFiltered.hiddenCount + " hidden by term-length filter");
-      if (hardFiltered.hiddenCount > 0) parts.push(hardFiltered.hiddenCount + " auto-rejected by eligibility");
-      filterNote.textContent = "Filtered: " + parts.join(", ") + ". Showing " + eligibleJobs.length + " of " + scoredJobs.length + ".";
-      tabs.appendToTab("overview", filterNote);
-    }
+      // --- Key Insights ---
+      const allMissing = new Map();
+      const allStrong = new Map();
+      eligibleJobs.forEach(function (entry) {
+        var reqSkills = (entry.parsed && Array.isArray(entry.parsed.requiredSkills)) ? entry.parsed.requiredSkills : [];
+        reqSkills.forEach(function (skill) {
+          if (resumeMap && resumeMap.has(skill)) {
+            allStrong.set(skill, (allStrong.get(skill) || 0) + 1);
+          } else {
+            allMissing.set(skill, (allMissing.get(skill) || 0) + 1);
+          }
+        });
+      });
+      var topMissing = Array.from(allMissing.entries()).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 5);
+      var topStrong = Array.from(allStrong.entries()).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 5);
 
-    const selection = wireSelectedJobInteraction(eligibleJobs, tabs, gate.settings, panel);
-    runtime.selection = selection;
-    tabs.appendToTab(
-      "search",
-      buildSmartSearchCard(
-        eligibleJobs,
-        gate.settings,
-        panel,
-        container,
-        selection && selection.render ? selection.render : null
-      )
-    );
-    tabs.appendToTab(
-      "rankings",
-      buildTopRankingsCard(eligibleJobs, {
-        onSelect: selection && selection.render ? selection.render : null,
-        resumeMap: resumeMap
-      })
-    );
-    tabs.appendToTab("flags", buildFlagsCard(eligibleJobs, gate.settings));
+      if (topMissing.length || topStrong.length) {
+        const insightCard = ns.makeCard("Key Insights");
+        if (topMissing.length) {
+          insightCard.appendChild(ns.makeInsightBox(
+            "Most requested skills you're missing: " + topMissing.map(function (e) { return e[0]; }).join(", "),
+            "warn"
+          ));
+        }
+        if (topStrong.length) {
+          var strongNote = document.createElement("p");
+          strongNote.className = "wwp-inline-note";
+          strongNote.style.color = "#2e7d32";
+          strongNote.textContent = "Your strongest matches: " + topStrong.map(function (e) { return e[0]; }).join(", ");
+          insightCard.appendChild(strongNote);
+        }
+        tabs.appendToTab("overview", insightCard);
+      }
+
+      // --- Jobs to Reconsider ---
+      const lowFitInteresting = sorted.filter(function (entry) {
+        var m = entry.overallMatch || 0;
+        return m >= 30 && m < 50 && (entry.targetRoleMatch || 0) >= 50;
+      }).slice(0, 3);
+      if (lowFitInteresting.length) {
+        const reconsiderCard = ns.makeCard("Worth Reconsidering");
+        var recNote = document.createElement("p");
+        recNote.className = "wwp-inline-note";
+        recNote.textContent = "Low overall fit but strong role alignment — may be worth a reach application.";
+        reconsiderCard.appendChild(recNote);
+        lowFitInteresting.forEach(function (entry) {
+          reconsiderCard.appendChild(buildJobCardForEntry(entry, resumeMap, {
+            onApply: function () { openJobEntry(entry); }
+          }));
+        });
+        tabs.appendToTab("overview", reconsiderCard);
+      }
+
+      // --- Filter Summary ---
+      if (termFiltered.hiddenCount > 0 || hardFiltered.hiddenCount > 0) {
+        var filterNote = document.createElement("p");
+        filterNote.className = "wwp-inline-note";
+        var parts = [];
+        if (termFiltered.hiddenCount > 0) parts.push(termFiltered.hiddenCount + " hidden by term-length filter");
+        if (hardFiltered.hiddenCount > 0) parts.push(hardFiltered.hiddenCount + " auto-rejected by eligibility");
+        filterNote.textContent = "Filtered: " + parts.join(", ") + ". Showing " + eligibleJobs.length + " of " + scoredJobs.length + ".";
+        tabs.appendToTab("overview", filterNote);
+      }
+
+      const selection = wireSelectedJobInteraction(eligibleJobs, tabs, gate.settings, panel);
+      runtime.selection = selection;
+      tabs.appendToTab(
+        "search",
+        buildSmartSearchCard(
+          eligibleJobs,
+          gate.settings,
+          panel,
+          container,
+          selection && selection.render ? selection.render : null
+        )
+      );
+      tabs.appendToTab(
+        "rankings",
+        buildTopRankingsCard(eligibleJobs, {
+          onSelect: selection && selection.render ? selection.render : null,
+          resumeMap: resumeMap
+        })
+      );
+      tabs.appendToTab("flags", buildFlagsCard(eligibleJobs, gate.settings));
+    } finally {
+      setListingsContainerPending(container, false);
+    }
   }
 
   if (IS_BACKGROUND_PROBE_TAB) {

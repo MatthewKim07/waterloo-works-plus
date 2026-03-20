@@ -43,13 +43,13 @@
 }
 
 tr.wwp-row-fit-strong > td {
-  background: rgba(34, 197, 94, 0.04);
+  background: transparent;
 }
 
 tr.wwp-row-fit-weak > td {
-  background: rgba(37, 99, 235, 0.03);
+  background: transparent;
 }
 
 tr.wwp-row-fit-block > td {
-  background: rgba(239, 68, 68, 0.05);
+  background: transparent;
 }
