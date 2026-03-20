@@ -58,7 +58,8 @@
         "src/content/common.js",
         "src/content/listings.js",
         "src/content/posting.js",
-        "src/content/ratings.js"
+        "src/content/ratings.js",
+        "src/content/application-form.js"
       ],
       "run_at": "document_idle"
     }
