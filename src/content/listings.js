@@ -1606,35 +1606,33 @@
     const requiresEight = c.eightMonthRequired === true;
     const explicitFourOnly = requiresFour || (acceptsFour && rejectsEight) || c.workTermLength === 4;
     const explicitEightOnly = requiresEight || (acceptsEight && rejectsFour) || c.workTermLength === 8;
+    const hasFourSignal =
+      explicitFourOnly || acceptsFour || c.workTermLength === 4 || c.fourMonthMention === true || c.fourMonthPreferred === true;
+    const hasEightSignal =
+      explicitEightOnly || acceptsEight || c.workTermLength === 8 || c.eightMonthMention === true || c.eightMonthPreferred === true;
 
     if (pref === "either") {
       return { eligible: true, reason: "Either term length accepted by user preference." };
     }
 
     if (pref === "4") {
-      if (explicitEightOnly) {
-        return { eligible: false, reason: "Posting appears to be 8-month only." };
+      if (hasEightSignal) {
+        return { eligible: false, reason: "Posting is identified as an 8-month role." };
       }
-      if (acceptsFour || c.workTermLength === 4) {
-        if (c.eightMonthPreferred && acceptsFour) {
-          return { eligible: true, reason: "8-month preferred but still accepts 4-month terms." };
-        }
-        return { eligible: true, reason: "Posting accepts 4-month term." };
+      if (hasFourSignal) {
+        return { eligible: true, reason: "Posting is identified as a 4-month role." };
       }
       // WaterlooWorks postings often omit explicit duration and default to one work term (4 months).
-      // Treat unknown duration as eligible unless the posting explicitly contradicts 4-month.
-      return { eligible: true, reason: "No explicit duration found; keeping posting unless it contradicts 4-month." };
+      // Keep unknown duration in 4-month mode unless the posting explicitly identifies as 8-month.
+      return { eligible: true, reason: "No explicit duration found; keeping posting in 4-month mode." };
     }
 
     if (pref === "8") {
-      if (explicitFourOnly) {
-        return { eligible: false, reason: "Posting appears to be 4-month only." };
+      if (hasFourSignal) {
+        return { eligible: false, reason: "Posting is identified as a 4-month role." };
       }
-      if (acceptsEight || c.workTermLength === 8) {
-        if (c.fourMonthPreferred && acceptsEight) {
-          return { eligible: true, reason: "4-month preferred but still accepts 8-month terms." };
-        }
-        return { eligible: true, reason: "Posting accepts 8-month term." };
+      if (hasEightSignal) {
+        return { eligible: true, reason: "Posting is identified as an 8-month role." };
       }
       return { eligible: false, reason: "Posting does not indicate 8-month eligibility." };
     }
