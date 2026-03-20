@@ -50,6 +50,7 @@
         "src/shared/profile-store.js",
         "src/shared/application-store.js",
         "src/shared/job-overlay-model.js",
+        "src/shared/job-inspector-view.js",
         "src/content/common.js",
         "src/content/listings.js",
         "src/content/posting.js",

@@ -158,41 +158,17 @@
     );
     panel.body.appendChild(tabs.root);
 
-    const scoreCard = ns.makeCard("Scores");
-    scoreCard.appendChild(ns.makeProgressMetric("Skill Match", skillMatch));
-    scoreCard.appendChild(ns.makeProgressMetric("Target Role Match", targetRoleMatch));
-    scoreCard.appendChild(ns.makeProgressMetric("Overall Match", overallMatch));
-
-    const breakdown = document.createElement("div");
-    breakdown.className = "wwp-kv";
-    [
-      ["Work Term Compatibility", `${viability.breakdown.termCompatibility}%`],
-      ["Faculty Alignment", `${viability.breakdown.facultyAlignment}%`],
-      ["Viability", `${viability.score}%`],
-      ["Selectivity Adj.", `${viability.breakdown.selectivityAdjustment}`]
-    ].forEach(([k, v]) => {
-      const row = document.createElement("div");
-      row.innerHTML = `<span>${k}</span><strong>${v}</strong>`;
-      breakdown.appendChild(row);
+    const libs = { makeCard: ns.makeCard, makeProgressMetric: ns.makeProgressMetric };
+    const scoreCard = ns.jobInspectorView.buildScoreCard(libs, {
+      skillMatch,
+      targetRoleMatch,
+      overallMatch,
+      viability
     });
-    scoreCard.appendChild(breakdown);
-
-    const recCard = ns.makeCard("Strategic Recommendation");
-    const recTitle = document.createElement("p");
-    recTitle.style.margin = "0 0 6px";
-    recTitle.style.fontWeight = "700";
-    recTitle.textContent = recommendation.label;
-    const reasonsList = document.createElement("ul");
-    reasonsList.className = "wwp-list";
-    recommendation.reasons.forEach((reason) => {
-      const li = document.createElement("li");
-      li.textContent = reason;
-      reasonsList.appendChild(li);
-    });
-    recCard.append(recTitle, reasonsList);
-
+    const recCard = ns.jobInspectorView.buildRecommendationCard(libs, recommendation);
     tabs.appendToTab("overview", scoreCard);
     tabs.appendToTab("overview", recCard);
+    tabs.appendToTab("overview", ns.jobInspectorView.buildActionStubs());
 
     const reqCard = ns.makeCard("Required vs Preferred Skills");
     const reqList = document.createElement("ul");
