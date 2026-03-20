@@ -58,6 +58,72 @@
     label.textContent = name || "No file selected";
   }
 
+  async function persistResumeSlice(settings) {
+    await ns.saveSettings(settings);
+    if (!ns.profileStore || typeof ns.profileStore.getActiveProfile !== "function") return;
+    const active = await ns.profileStore.getActiveProfile();
+    if (!active) return;
+    await ns.profileStore.saveProfile({
+      ...active,
+      resumeRawText: settings.resumeRawText,
+      resumeSkills: settings.resumeSkills,
+      manualSkills: settings.manualSkills,
+      excludedResumeSkills: settings.excludedResumeSkills
+    });
+  }
+
+  async function migrateDefaultProfileFromSettings(settings) {
+    if (!ns.profileStore) return;
+    const profiles = await ns.profileStore.listProfiles();
+    const def = profiles.find((p) => p.id === "default");
+    if (!def) return;
+    const profileEmpty =
+      !String(def.resumeRawText || "").trim() && !Object.keys(def.resumeSkills || {}).length;
+    const settingsHas =
+      !!(settings.resumeRawText && String(settings.resumeRawText).trim()) ||
+      Object.keys(settings.resumeSkills || {}).length > 0;
+    if (profileEmpty && settingsHas) {
+      await ns.profileStore.saveProfile({
+        ...def,
+        resumeRawText: settings.resumeRawText || "",
+        resumeSkills: settings.resumeSkills || {},
+        manualSkills: settings.manualSkills || {},
+        excludedResumeSkills: settings.excludedResumeSkills || []
+      });
+    }
+  }
+
+  async function syncActiveProfileIntoSettings() {
+    const settings = await ns.getSettings();
+    if (!ns.profileStore) return settings;
+    const p = await ns.profileStore.getActiveProfile();
+    if (!p) return settings;
+    settings.resumeRawText = p.resumeRawText || "";
+    settings.resumeSkills = p.resumeSkills && typeof p.resumeSkills === "object" ? p.resumeSkills : {};
+    settings.manualSkills = p.manualSkills && typeof p.manualSkills === "object" ? p.manualSkills : {};
+    settings.excludedResumeSkills = Array.isArray(p.excludedResumeSkills) ? p.excludedResumeSkills : [];
+    await ns.saveSettings(settings);
+    return settings;
+  }
+
+  async function refreshProfileSelect() {
+    const sel = byId("profileSelect");
+    if (!sel || !ns.profileStore) return;
+    const profiles = await ns.profileStore.listProfiles();
+    const active = await ns.profileStore.getActiveProfile();
+    const activeId = active && active.id ? active.id : "default";
+    sel.innerHTML = "";
+    profiles.forEach((p) => {
+      const opt = document.createElement("option");
+      opt.value = p.id;
+      opt.textContent = p.name || p.id;
+      sel.appendChild(opt);
+    });
+    if ([...sel.options].some((o) => o.value === activeId)) {
+      sel.value = activeId;
+    }
+  }
+
   function getSelectedResumeFile() {
     const input = byId("resumeUpload");
     if (selectedResumeFile) return selectedResumeFile;
@@ -487,7 +553,7 @@
       validParsedSkills.has(String(k || "").toLowerCase())
     );
 
-    await ns.saveSettings(settings);
+    await persistResumeSlice(settings);
 
     renderSkillInventory(settings);
     setStatus("resumeStatus", `Resume parsed. Extracted ${parsed.skills.size} parsed skills.`, false);
@@ -516,14 +582,17 @@
       settings.excludedResumeSkills = Array.from(excluded);
     }
 
-    await ns.saveSettings(settings);
+    await persistResumeSlice(settings);
     input.value = "";
     renderSkillInventory(settings);
     setStatus("skillEditStatus", `Added manual skill: ${skill}`, false);
   }
 
   async function loadForm() {
-    const settings = await ns.getSettings();
+    let settings = await ns.getSettings();
+    await migrateDefaultProfileFromSettings(settings);
+    settings = await syncActiveProfileIntoSettings();
+    await refreshProfileSelect();
 
     const enabledToggle = byId("enabledToggle");
     if (enabledToggle) enabledToggle.checked = settings.enabled;
@@ -651,7 +720,7 @@
         settings.resumeRawText = "";
         settings.resumeSkills = {};
         settings.excludedResumeSkills = [];
-        await ns.saveSettings(settings);
+        await persistResumeSlice(settings);
 
         const resumeText = byId("resumeText");
         if (resumeText) resumeText.value = "";
@@ -697,7 +766,7 @@
           const manualSkills = settings.manualSkills && typeof settings.manualSkills === "object" ? settings.manualSkills : {};
           delete manualSkills[skill];
           settings.manualSkills = manualSkills;
-          await ns.saveSettings(settings);
+          await persistResumeSlice(settings);
           renderSkillInventory(settings);
           setStatus("skillEditStatus", `Removed manual skill: ${skill}`, false);
           return;
@@ -709,7 +778,7 @@
           const key = skill.toLowerCase();
           excluded.add(key);
           settings.excludedResumeSkills = Array.from(excluded);
-          await ns.saveSettings(settings);
+          await persistResumeSlice(settings);
           renderSkillInventory(settings);
           setStatus("skillEditStatus", `Hidden parsed skill: ${skill}`, false);
         }
@@ -730,7 +799,7 @@
         const wasHidden = excluded.has(key);
         if (wasHidden) excluded.delete(key);
         settings.excludedResumeSkills = Array.from(excluded);
-        await ns.saveSettings(settings);
+        await persistResumeSlice(settings);
         renderSkillInventory(settings);
         setStatus("skillEditStatus", `Restored parsed skill: ${skill}`, false);
       });
@@ -748,6 +817,33 @@
     const savePrefsBtn = byId("savePrefsBtn");
     if (savePrefsBtn) {
       savePrefsBtn.addEventListener("click", savePreferences);
+    }
+
+    const profileSelect = byId("profileSelect");
+    if (profileSelect) {
+      profileSelect.addEventListener("change", async () => {
+        const id = profileSelect.value;
+        if (ns.profileStore && typeof ns.profileStore.setActiveProfileId === "function") {
+          await ns.profileStore.setActiveProfileId(id);
+        }
+        await loadForm();
+      });
+    }
+
+    const newProfileBtn = byId("newProfileBtn");
+    if (newProfileBtn && ns.profileStore) {
+      newProfileBtn.addEventListener("click", async () => {
+        const name = window.prompt("Name this resume profile (e.g. ML intern, return offer):");
+        if (!name || !String(name).trim()) return;
+        const created = await ns.profileStore.createProfile(String(name).trim());
+        await ns.profileStore.setActiveProfileId(created.id);
+        await syncActiveProfileIntoSettings();
+        await refreshProfileSelect();
+        const resumeText = byId("resumeText");
+        if (resumeText) resumeText.value = "";
+        renderSkillInventory(await ns.getSettings());
+        setStatus("resumeStatus", `Switched to new profile "${created.name}". Paste or upload a resume for it.`, false);
+      });
     }
   }
 

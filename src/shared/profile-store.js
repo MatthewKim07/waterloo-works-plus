@@ -77,11 +77,28 @@
     return bundle.profiles[id];
   }
 
+  async function createProfile(name) {
+    const bundle = await getBundle();
+    const id = `p-${Date.now()}`;
+    bundle.profiles[id] = {
+      id,
+      name: String(name || "Untitled").slice(0, 80),
+      resumeRawText: "",
+      resumeSkills: {},
+      manualSkills: {},
+      excludedResumeSkills: [],
+      snippets: {}
+    };
+    await setLocalStorage({ [STORAGE_KEY]: bundle });
+    return bundle.profiles[id];
+  }
+
   ns.profileStore = {
     STORAGE_KEY,
     listProfiles,
     getActiveProfile,
     setActiveProfileId,
-    saveProfile
+    saveProfile,
+    createProfile
   };
 })(globalThis);
