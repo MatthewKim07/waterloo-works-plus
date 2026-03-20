@@ -597,6 +597,11 @@
     const enabledToggle = byId("enabledToggle");
     if (enabledToggle) enabledToggle.checked = settings.enabled;
 
+    const flagAutofill = byId("flagAutofill");
+    if (flagAutofill) flagAutofill.checked = !!(settings.featureFlags && settings.featureFlags.autofill);
+    const flagTracker = byId("flagTracker");
+    if (flagTracker) flagTracker.checked = !!(settings.featureFlags && settings.featureFlags.applicationTracker);
+
     const resumeText = byId("resumeText");
     if (resumeText) resumeText.value = settings.resumeRawText || "";
 
@@ -623,6 +628,15 @@
 
     const enabledToggle = byId("enabledToggle");
     if (enabledToggle) settings.enabled = enabledToggle.checked;
+
+    const flagAutofill = byId("flagAutofill");
+    const flagTracker = byId("flagTracker");
+    const prev = settings.featureFlags || {};
+    settings.featureFlags = {
+      smartOverlay: prev.smartOverlay !== false,
+      autofill: !!(flagAutofill && flagAutofill.checked),
+      applicationTracker: !!(flagTracker && flagTracker.checked)
+    };
 
     const workTerm = byId("workTerm");
     if (workTerm) settings.preferences.workTerm = normalizeWorkTerm(workTerm.value);
