@@ -53,12 +53,12 @@
         <section class="card" id="resume">
           <h2>Resume Input</h2>
           <p class="section-note">Upload or paste your latest resume. We parse skills locally and save to extension storage.</p>
-          <div class="profile-bar row" style="margin-bottom: 12px; flex-wrap: wrap; gap: 8px; align-items: center">
-            <label style="margin: 0">
-              Profile
-              <select id="profileSelect" style="margin-left: 6px"></select>
-            </label>
-            <button id="newProfileBtn" type="button" class="secondary">New profile</button>
+          <div class="profile-controls">
+            <label class="label" for="profileSelect">Profile</label>
+            <div class="profile-controls-row">
+              <select id="profileSelect"></select>
+              <button id="newProfileBtn" type="button" class="secondary">New profile</button>
+            </div>
           </div>
           <label class="label" for="resumeUpload">Upload Resume (PDF, DOCX, TXT)</label>
           <label class="file-shell" for="resumeUpload">
