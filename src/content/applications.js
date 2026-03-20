@@ -21,6 +21,9 @@
 
     const out = await ns.applicationReconciler.reconcileFromPage(document, location);
     if (ns.logger && out && out.updated) ns.logger.info("reconciler updated rows", out.updated);
+    if (ns.appendWwpEvent && out && out.updated) {
+      ns.appendWwpEvent("reconciler", { updated: out.updated }).catch(() => {});
+    }
   }
 
   run().catch(() => {});
