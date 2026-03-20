@@ -47,6 +47,40 @@
     }
   };
 
+  /**
+   * Avoid running user-facing overlays in hidden probe tabs/iframes used for extraction.
+   */
+  ns.isUserFacingWaterlooWorksPage = function isUserFacingWaterlooWorksPage() {
+    try {
+      if (window !== window.top && window.name === "wwp-probe-frame") {
+        return false;
+      }
+      if (new URLSearchParams(String(location.search || "")).get("wwp_probe") === "1") {
+        return false;
+      }
+    } catch (_error) {
+      return false;
+    }
+    return true;
+  };
+
+  /**
+   * Feature flags default smartOverlay on; future features default off until implemented.
+   */
+  ns.isFeatureEnabled = function isFeatureEnabled(settings, featureName) {
+    const flags = settings && settings.featureFlags ? settings.featureFlags : {};
+    if (featureName === "smartOverlay") {
+      return flags.smartOverlay !== false;
+    }
+    if (featureName === "autofill") {
+      return flags.autofill === true;
+    }
+    if (featureName === "applicationTracker") {
+      return flags.applicationTracker === true;
+    }
+    return false;
+  };
+
   ns.detectPageType = function detectPageType(doc, locationLike) {
     const currentDoc = doc || document;
     const loc = locationLike || location;
@@ -95,12 +129,25 @@
     return "unknown";
   };
 
-  ns.getSettingsForPage = async function getSettingsForPage() {
+  ns.getSettingsForPage = async function getSettingsForPage(doc, locationLike) {
+    const currentDoc = doc || document;
+    const loc = locationLike || location;
     const settings = await ns.getSettings();
-    const disabled = !settings.enabled;
+    const pathname = String(loc.pathname || "");
+    const pageType = ns.detectPageType(currentDoc, loc);
+
+    const pathDisabled = settings.disabledPaths.includes(pathname);
+    const unsupportedOff =
+      !!(settings.preferences && settings.preferences.globalDisableOnUnsupportedPages) && pageType === "unknown";
+
+    const disabled = !settings.enabled || pathDisabled || unsupportedOff;
+
     return {
       settings,
-      disabled
+      disabled,
+      pageType,
+      pathDisabled,
+      unsupportedOff
     };
   };
 

@@ -4,7 +4,7 @@
   "private": true,
   "description": "WaterlooWorks+ MV3 extension MVP scaffold",
   "scripts": {
-    "check": "node --check src/shared/storage.js && node --check src/shared/skills.js && node --check src/shared/utils.js && node --check src/shared/resume-parser.js && node --check src/shared/job-parser.js && node --check src/shared/ratings-parser.js && node --check src/shared/scoring.js && node --check src/shared/ui.js && node --check src/content/common.js && node --check src/content/listings.js && node --check src/content/posting.js && node --check src/content/ratings.js && node --check src/background/service-worker.js && node --check src/options/options.js && node --check src/popup/popup.js"
+    "check": "node --check src/shared/schema.js && node --check src/shared/storage.js && node --check src/shared/skills.js && node --check src/shared/utils.js && node --check src/shared/resume-parser.js && node --check src/shared/job-parser.js && node --check src/shared/ratings-parser.js && node --check src/shared/scoring.js && node --check src/shared/ui.js && node --check src/content/common.js && node --check src/content/listings.js && node --check src/content/posting.js && node --check src/content/ratings.js && node --check src/background/service-worker.js && node --check src/options/options.js && node --check src/popup/popup.js"
   },
   "dependencies": {
     "fflate": "^0.8.2",

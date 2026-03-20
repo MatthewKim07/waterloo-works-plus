@@ -102,11 +102,13 @@
   }
 
   async function run() {
+    if (!ns.isUserFacingWaterlooWorksPage()) return;
     const pageType = ns.detectPageType(document, location);
     if (pageType !== "posting") return;
 
     const gate = await ns.getSettingsForPage();
     if (gate.disabled) return;
+    if (!ns.isFeatureEnabled(gate.settings, "smartOverlay")) return;
 
     const parsed = ns.parseJobPosting(document);
     const resumeSkills = ns.getResumeSkillMap(gate.settings);

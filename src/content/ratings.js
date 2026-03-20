@@ -80,11 +80,13 @@
   }
 
   async function run() {
+    if (!ns.isUserFacingWaterlooWorksPage()) return;
     const pageType = ns.detectPageType(document, location);
     if (pageType !== "ratings") return;
 
     const gate = await ns.getSettingsForPage();
     if (gate.disabled) return;
+    if (!ns.isFeatureEnabled(gate.settings, "smartOverlay")) return;
 
     const parsed = ns.parseRatingsPage(document);
     const prefs = gate.settings.preferences;
