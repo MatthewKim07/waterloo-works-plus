@@ -4156,39 +4156,98 @@
 
     panel.setSubtitle(`Ranked ${eligibleJobs.length} jobs`);
 
-    const top = eligibleJobs.slice().sort((a, b) => b.rankingScore - a.rankingScore)[0];
-    const metrics = ns.makeCard("Top Job Score Breakdown");
-    metrics.appendChild(ns.makeProgressMetric("Skill Match", top.skillMatch));
-    metrics.appendChild(ns.makeProgressMetric("Target Role Match", top.targetRoleMatch || 0));
-    metrics.appendChild(ns.makeProgressMetric("Overall Match", top.overallMatch || 0));
+    const resumeMap = ns.getResumeSkillMap(gate.settings);
+    const sorted = eligibleJobs.slice().sort((a, b) => b.rankingScore - a.rankingScore);
 
-    const rec = ns.makeCard("Top Recommendation");
-    const recTitle = document.createElement("p");
-    recTitle.style.margin = "0 0 6px";
-    recTitle.style.fontWeight = "700";
-    recTitle.textContent = top.recommendation.label;
-    const recList = document.createElement("ul");
-    recList.className = "wwp-list";
-    top.recommendation.reasons.forEach((reason) => {
-      const li = document.createElement("li");
-      li.textContent = reason;
-      recList.appendChild(li);
+    // --- Application Snapshot ---
+    const strongCount = eligibleJobs.filter((e) => (e.overallMatch || 0) >= 72).length;
+    const decentCount = eligibleJobs.filter((e) => {
+      const m = e.overallMatch || 0;
+      return m >= 45 && m < 72;
+    }).length;
+    const weakCount = eligibleJobs.filter((e) => (e.overallMatch || 0) < 45).length;
+
+    tabs.appendToTab("overview", ns.makeStatRow([
+      { value: String(eligibleJobs.length), label: "Analyzed" },
+      { value: String(strongCount), label: "Strong" },
+      { value: String(decentCount), label: "Decent" },
+      { value: String(weakCount), label: "Low Fit" }
+    ]));
+
+    // --- Top Matches ---
+    const topMatchesCard = ns.makeCard("Top Matches");
+    sorted.slice(0, 5).forEach(function (entry) {
+      topMatchesCard.appendChild(buildJobCardForEntry(entry, resumeMap, {
+        onApply: function () { openJobEntry(entry); },
+        onSelect: null
+      }));
     });
-    rec.append(recTitle, recList);
+    tabs.appendToTab("overview", topMatchesCard);
 
-    const termFilterCard = ns.makeCard("Term-Length Filter");
-    const prefLabel = gate.settings.preferences.preferredTermLength === "either" ? "Either" : `${gate.settings.preferences.preferredTermLength}-month`;
-    termFilterCard.innerHTML += `<p class="wwp-inline-note">Preference: <strong>${prefLabel}</strong>. Showing ${eligibleJobs.length} of ${scoredJobs.length} analyzed rows.</p>`;
-    if (termFiltered.hiddenCount > 0 && gate.settings.preferences.preferredTermLength !== "either") {
-      termFilterCard.innerHTML += `<p class="wwp-inline-note">${termFiltered.hiddenCount} rows were hidden because they did not explicitly match your selected term-length rule.</p>`;
-    }
-    if (hardFiltered.hiddenCount > 0) {
-      termFilterCard.innerHTML += `<p class="wwp-inline-note">${hardFiltered.hiddenCount} rows were auto-rejected due to hard eligibility constraints (e.g., Master's/PhD, work-term/year minimums).</p>`;
+    // --- Key Insights ---
+    const allMissing = new Map();
+    const allStrong = new Map();
+    eligibleJobs.forEach(function (entry) {
+      var reqSkills = (entry.parsed && Array.isArray(entry.parsed.requiredSkills)) ? entry.parsed.requiredSkills : [];
+      reqSkills.forEach(function (skill) {
+        if (resumeMap && resumeMap.has(skill)) {
+          allStrong.set(skill, (allStrong.get(skill) || 0) + 1);
+        } else {
+          allMissing.set(skill, (allMissing.get(skill) || 0) + 1);
+        }
+      });
+    });
+    var topMissing = Array.from(allMissing.entries()).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 5);
+    var topStrong = Array.from(allStrong.entries()).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 5);
+
+    if (topMissing.length || topStrong.length) {
+      const insightCard = ns.makeCard("Key Insights");
+      if (topMissing.length) {
+        insightCard.appendChild(ns.makeInsightBox(
+          "Most requested skills you're missing: " + topMissing.map(function (e) { return e[0]; }).join(", "),
+          "warn"
+        ));
+      }
+      if (topStrong.length) {
+        var strongNote = document.createElement("p");
+        strongNote.className = "wwp-inline-note";
+        strongNote.style.color = "#86efac";
+        strongNote.textContent = "Your strongest matches: " + topStrong.map(function (e) { return e[0]; }).join(", ");
+        insightCard.appendChild(strongNote);
+      }
+      tabs.appendToTab("overview", insightCard);
     }
 
-    tabs.appendToTab("overview", termFilterCard);
-    tabs.appendToTab("overview", metrics);
-    tabs.appendToTab("overview", rec);
+    // --- Jobs to Reconsider ---
+    const lowFitInteresting = sorted.filter(function (entry) {
+      var m = entry.overallMatch || 0;
+      return m >= 30 && m < 50 && (entry.targetRoleMatch || 0) >= 50;
+    }).slice(0, 3);
+    if (lowFitInteresting.length) {
+      const reconsiderCard = ns.makeCard("Worth Reconsidering");
+      var recNote = document.createElement("p");
+      recNote.className = "wwp-inline-note";
+      recNote.textContent = "Low overall fit but strong role alignment — may be worth a reach application.";
+      reconsiderCard.appendChild(recNote);
+      lowFitInteresting.forEach(function (entry) {
+        reconsiderCard.appendChild(buildJobCardForEntry(entry, resumeMap, {
+          onApply: function () { openJobEntry(entry); }
+        }));
+      });
+      tabs.appendToTab("overview", reconsiderCard);
+    }
+
+    // --- Filter Summary ---
+    if (termFiltered.hiddenCount > 0 || hardFiltered.hiddenCount > 0) {
+      var filterNote = document.createElement("p");
+      filterNote.className = "wwp-inline-note";
+      var parts = [];
+      if (termFiltered.hiddenCount > 0) parts.push(termFiltered.hiddenCount + " hidden by term-length filter");
+      if (hardFiltered.hiddenCount > 0) parts.push(hardFiltered.hiddenCount + " auto-rejected by eligibility");
+      filterNote.textContent = "Filtered: " + parts.join(", ") + ". Showing " + eligibleJobs.length + " of " + scoredJobs.length + ".";
+      tabs.appendToTab("overview", filterNote);
+    }
+
     const selection = wireSelectedJobInteraction(eligibleJobs, tabs, gate.settings, panel);
     runtime.selection = selection;
     tabs.appendToTab(
