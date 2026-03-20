@@ -4,6 +4,9 @@
   ns.__WWP_APPLICATIONS_RAN = true;
 
   async function run() {
+    if (ns.logger && typeof ns.logger.refreshDebugFromStorage === "function") {
+      await ns.logger.refreshDebugFromStorage();
+    }
     if (!ns.isUserFacingWaterlooWorksPage || !ns.isUserFacingWaterlooWorksPage()) return;
     const gate = await ns.getSettingsForPage();
     if (gate.disabled || !ns.isFeatureEnabled(gate.settings, "applicationTracker")) return;
@@ -16,7 +19,8 @@
     if (!looksAppsPage) return;
     if (!ns.applicationReconciler || typeof ns.applicationReconciler.reconcileFromPage !== "function") return;
 
-    await ns.applicationReconciler.reconcileFromPage(document, location);
+    const out = await ns.applicationReconciler.reconcileFromPage(document, location);
+    if (ns.logger && out && out.updated) ns.logger.info("reconciler updated rows", out.updated);
   }
 
   run().catch(() => {});
