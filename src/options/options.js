@@ -622,10 +622,10 @@
     setResumeFileNameLabel("");
     renderSkillInventory(settings);
 
-    const trackerMountbyId = byId("trackerMount");
-    if (trackerMountbyId && ns.renderTrackerDashboard) {
+    const trackerMount = byId("trackerMount");
+    if (trackerMount && ns.renderTrackerDashboard) {
       const tstat = byId("trackerStatus");
-      ns.renderTrackerDashboard(trackerMountbyId, tstat).catch(() => {});
+      ns.renderTrackerDashboard(trackerMount, tstat).catch(() => {});
     }
   }
 
