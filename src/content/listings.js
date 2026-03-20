@@ -146,6 +146,19 @@
       .trim();
   }
 
+  function getTextSansExtensionUi(node) {
+    if (!(node instanceof Element)) {
+      return cleanNoiseText(ns.getTextFromElement(node));
+    }
+    try {
+      const clone = node.cloneNode(true);
+      clone.querySelectorAll(".wwp-row-badges, .wwp-row-skills, [id^='wwp-']").forEach((el) => el.remove());
+      return cleanNoiseText(ns.getTextFromElement(clone));
+    } catch (_error) {
+      return cleanNoiseText(ns.getTextFromElement(node));
+    }
+  }
+
   function isActionAnchorText(text) {
     const t = cleanNoiseText(text).toLowerCase();
     if (!t) return true;
@@ -1228,7 +1241,7 @@
       const tdCount = row.querySelectorAll("td").length;
       if (tdCount < 3) return;
 
-      const rowText = cleanNoiseText(ns.getTextFromElement(row));
+      const rowText = getTextSansExtensionUi(row);
       if (!rowText || rowText.length < 24) return;
       if (/sign out|logout|settings|profile|student help|about co-op/.test(rowText.toLowerCase())) return;
 
@@ -1269,7 +1282,7 @@
       if (isLikelyNavLinkText(title)) continue;
       if (!isLikelyTitleAnchor(anchor)) continue;
 
-      const rowText = ns.getTextFromElement(row);
+      const rowText = getTextSansExtensionUi(row);
       if (rowText.length < 18) continue;
       if (/sign out|logout|profile|settings|help center|student help/.test(rowText.toLowerCase())) continue;
 
@@ -1293,13 +1306,13 @@
     ];
     for (const selector of selectors) {
       const node = row.querySelector(selector);
-      const text = ns.getTextFromElement(node);
+      const text = getTextSansExtensionUi(node);
       if (text && text.length < 80 && !/^\d{5,8}$/.test(text)) return text;
     }
 
     const titleNorm = cleanNoiseText(title || "").toLowerCase();
     const cells = Array.from(row.querySelectorAll("td"))
-      .map((cell) => cleanNoiseText(ns.getTextFromElement(cell)))
+      .map((cell) => getTextSansExtensionUi(cell))
       .filter(Boolean);
     for (const text of cells) {
       const low = text.toLowerCase();
@@ -1316,7 +1329,7 @@
     const selectors = [".location", "[data-location]", "td:nth-child(3)"];
     for (const selector of selectors) {
       const node = row.querySelector(selector);
-      const text = ns.getTextFromElement(node);
+      const text = getTextSansExtensionUi(node);
       if (text && text.length < 80) return text;
     }
     return "";
@@ -1326,10 +1339,10 @@
     const selectors = [".description", ".snippet", "td:nth-child(4)"];
     for (const selector of selectors) {
       const node = row.querySelector(selector);
-      const text = ns.getTextFromElement(node);
+      const text = getTextSansExtensionUi(node);
       if (text && text.length > 15) return text.slice(0, 300);
     }
-    return ns.getTextFromElement(row).slice(0, 300);
+    return getTextSansExtensionUi(row).slice(0, 300);
   }
 
   function rankCandidateContainers(candidates) {
@@ -2357,6 +2370,83 @@
     });
   }
 
+  async function hydrateJobFromReplayRequests(job, knownPostingUrls) {
+    if (!job) return null;
+
+    const startMs = Date.now();
+    const contextStrings = job.__contextStrings || collectContextStringsForJob(job);
+    job.__contextStrings = contextStrings;
+    const requests = buildPostingRequestCandidates(job, knownPostingUrls || [], contextStrings);
+
+    for (const request of requests) {
+      if (Date.now() - startMs > 5200) break;
+
+      const method = String(request.method || "GET").toUpperCase();
+      const url = String(request.url || "");
+      const body = typeof request.body === "string" ? request.body : "";
+      const headers = request.headers && typeof request.headers === "object" ? request.headers : undefined;
+      const highConfidenceRequest = String(request.matchConfidence || "").toLowerCase() === "high";
+      if (!url) continue;
+
+      const canUseCache = method === "GET" && !body && isLikelyPostingUrl(url);
+      let parsed = canUseCache ? await ns.getCachedJobAnalysis(url) : null;
+      if (parsed && !parsedLikelyMatchesSelectedJob(parsed, job)) {
+        parsed = null;
+      }
+
+      if (!parsed) {
+        try {
+          const html = await ns.fetchJobHtml(url, {
+            method,
+            body: body || undefined,
+            headers
+          });
+          const parsedFromFetch = parsePostingResponsePayload(html);
+          const likelyMatch =
+            parsedLikelyMatchesSelectedJob(parsedFromFetch, job) ||
+            (highConfidenceRequest && looksLikeFullPostingParsed(parsedFromFetch, job.title));
+          if (!likelyMatch) {
+            continue;
+          }
+          parsed = parsedFromFetch;
+          if (canUseCache) {
+            await ns.setCachedJobAnalysis(url, parsed);
+          }
+        } catch (_error) {
+          continue;
+        }
+      }
+
+      const parsedLikely =
+        parsedLikelyMatchesSelectedJob(parsed, job) || (highConfidenceRequest && looksLikeFullPostingParsed(parsed, job.title));
+      if (!parsedLikely) {
+        continue;
+      }
+
+      if (url && Array.isArray(knownPostingUrls) && !knownPostingUrls.includes(url)) {
+        knownPostingUrls.push(url);
+      }
+
+      return {
+        job: url ? { ...job, url } : job,
+        parsed,
+        source: request.source || "request-replay",
+        method
+      };
+    }
+
+    const parsedFromContext = parsePostingFromContextBlob(job, contextStrings);
+    if (parsedFromContext && parsedLikelyMatchesSelectedJob(parsedFromContext, job)) {
+      return {
+        job,
+        parsed: parsedFromContext,
+        source: "context"
+      };
+    }
+
+    return null;
+  }
+
   async function analyzeJobs(jobs, settings, panel) {
     let resumeSkills = ns.getResumeSkillMap(settings);
     if ((!resumeSkills || resumeSkills.size === 0) && settings && typeof settings.resumeRawText === "string" && settings.resumeRawText.trim()) {
@@ -2364,12 +2454,15 @@
       resumeSkills = parsedResume.skills || new Map();
     }
 
+    const knownPostingUrls = ns.unique(jobs.map((job) => (job && job.url ? job.url : "")).filter(Boolean));
+
     const results = await ns.runWithConcurrency(jobs, 3, async (job, index) => {
       if (index > 0) {
         await ns.wait(120);
       }
 
       let parsed = null;
+      let effectiveJob = job;
 
       if (job.url) {
         const canUseCache = isLikelyPostingUrl(job.url);
@@ -2395,19 +2488,27 @@
         }
       }
 
-      if (!parsed) {
-        // Fallback: analyze using visible row content only when posting fetch is unavailable.
-        parsed = ns.parseJobPosting(job.snippet || ns.getTextFromElement(job.row));
+      if (!parsed || !looksLikeFullPostingParsed(parsed, effectiveJob.title)) {
+        const replayHydrated = await hydrateJobFromReplayRequests(effectiveJob, knownPostingUrls);
+        if (replayHydrated && replayHydrated.parsed) {
+          effectiveJob = replayHydrated.job || effectiveJob;
+          parsed = replayHydrated.parsed;
+        }
       }
 
-      const analyzed = analyzeParsedJob(job, parsed, resumeSkills, settings);
+      if (!parsed) {
+        // Fallback: analyze using visible row content only when posting fetch is unavailable.
+        parsed = ns.parseJobPosting(effectiveJob.snippet || ns.getTextFromElement(effectiveJob.row));
+      }
+
+      const analyzed = analyzeParsedJob(effectiveJob, parsed, resumeSkills, settings);
 
       if (panel) {
         panel.setSubtitle(`Analyzed ${index + 1} / ${jobs.length} postings`);
       }
 
       return {
-        job,
+        job: effectiveJob,
         ...analyzed
       };
     });
@@ -3064,7 +3165,7 @@
 
     var note = document.createElement("p");
     note.className = "wwp-inline-note";
-    note.textContent = "Click the job title to load full analysis.";
+    note.textContent = "Loading full analysis automatically. If this job blocks direct extraction, use Open Posting.";
 
     var applyBtn = document.createElement("button");
     applyBtn.type = "button";
@@ -3775,6 +3876,23 @@
       rememberEntry(entry);
     });
 
+    function hasAccurateSelectedData(entry) {
+      if (!entry || !entry.parsed) return false;
+      return looksLikeFullPostingParsed(entry.parsed, entry.job && entry.job.title);
+    }
+
+    async function hydrateEntryForSelectedPanel(entry) {
+      if (!entry) return null;
+
+      const networkHydrated = await hydrateEntryFromNetwork(entry);
+      if (networkHydrated) return networkHydrated;
+
+      const probeHydrated = await hydrateEntryFromProbeFrame(entry);
+      if (probeHydrated) return probeHydrated;
+
+      return null;
+    }
+
     function render(entry, options) {
       const opts = options || {};
       if (!entry) return;
@@ -3784,7 +3902,7 @@
       selectedRow.classList.add("wwp-row-selected");
 
       selectedHost.innerHTML = "";
-      if (opts.showAccurate === true) {
+      if (opts.showAccurate === true || hasAccurateSelectedData(entry)) {
         const blocks = buildSelectedJobCard(entry, settings);
         selectedHost.appendChild(blocks.card);
         if (blocks.rec) selectedHost.appendChild(blocks.rec);
@@ -3798,45 +3916,55 @@
         panel.setSubtitle(`Selected: ${entry.job.title}`);
       }
 
-      if (opts.skipLiveRefresh || opts.requestLiveRefresh !== true) return;
+      if (opts.skipLiveRefresh) return;
+      if (hasAccurateSelectedData(entry) && opts.requestAutoHydrate !== true && opts.requestLiveRefresh !== true) return;
       if (panel && typeof panel.setSubtitle === "function") {
-        panel.setSubtitle(`Selected: ${selectedTitle} (waiting for posting open...)`);
+        panel.setSubtitle(`Selected: ${selectedTitle} (loading full analysis...)`);
       }
       const ticket = ++renderNonce;
       let hydratedFromLive = false;
-      refreshEntryFromVisiblePosting(entry)
-        .then((liveRefreshed) => {
+      hydrateEntryForSelectedPanel(entry)
+        .then((autoHydrated) => {
           if (ticket !== renderNonce) return null;
-          if (liveRefreshed) {
+          if (autoHydrated) {
             hydratedFromLive = true;
-            rememberEntry(liveRefreshed);
-            render(liveRefreshed, { showAccurate: true, skipLiveRefresh: true });
+            rememberEntry(autoHydrated);
+            render(autoHydrated, { showAccurate: true, skipLiveRefresh: true });
             return null;
           }
+          if (opts.requestLiveRefresh === true) {
+            return refreshEntryFromVisiblePosting(entry);
+          }
           return null;
+        })
+        .then((liveRefreshed) => {
+          if (ticket !== renderNonce || !liveRefreshed) return;
+          hydratedFromLive = true;
+          rememberEntry(liveRefreshed);
+          render(liveRefreshed, { showAccurate: true, skipLiveRefresh: true });
         })
         .catch((_error) => {
           if (ticket !== renderNonce) return;
           if (panel && typeof panel.setSubtitle === "function") {
-            panel.setSubtitle(`Selected: ${selectedTitle} (open posting to load fit)`);
+            panel.setSubtitle(`Selected: ${selectedTitle} (auto-load failed; open posting for full fit)`);
           }
         })
         .finally(() => {
           if (ticket !== renderNonce) return;
           if (!panel || typeof panel.setSubtitle !== "function") return;
-          panel.setSubtitle(hydratedFromLive ? `Selected: ${selectedTitle}` : `Selected: ${selectedTitle} (open posting for accurate fit)`);
+          panel.setSubtitle(hydratedFromLive ? `Selected: ${selectedTitle}` : `Selected: ${selectedTitle} (partial analysis shown)`);
         });
     }
 
     const sorted = scoredJobs.slice().sort((a, b) => b.rankingScore - a.rankingScore);
-    render(sorted[0] || scoredJobs[0], { skipLiveRefresh: true });
+    render(sorted[0] || scoredJobs[0], { requestAutoHydrate: true });
 
     scoredJobs.forEach((entry) => {
       const row = entry.job.row;
       if (!row) return;
       const onRowClick = () => {
         if (suppressSelectionHandlers) return;
-        render(entry, { skipLiveRefresh: true });
+        render(entry, { requestAutoHydrate: true });
       };
       row.addEventListener("click", onRowClick, { passive: true });
       cleanup.push(() => row.removeEventListener("click", onRowClick));
@@ -3857,7 +3985,7 @@
 
       const row = target.closest("tr");
       if (row && row.dataset && row.dataset.wwpJobKey && byKey.has(row.dataset.wwpJobKey)) {
-        render(byKey.get(row.dataset.wwpJobKey), { skipLiveRefresh: true });
+        render(byKey.get(row.dataset.wwpJobKey), { requestAutoHydrate: true });
         return;
       }
 
@@ -4105,7 +4233,8 @@
       mutationTimer: 0,
       rerunTimer: 0,
       pageClickHandler: null,
-      currentSignature: ""
+      currentSignature: "",
+      ignoreChangeDetectionUntil: 0
     };
     ns.__WWP_LISTINGS_RUNTIME = runtime;
 
@@ -4182,6 +4311,7 @@
 
     function checkForListingsChange(reason) {
       if (runtime.disposed) return;
+      if (Date.now() < runtime.ignoreChangeDetectionUntil) return;
       const latest = findJobRows();
       if (!latest.jobs.length) return;
       const nextSignature = computeJobSetSignature(latest.jobs);
@@ -4195,6 +4325,7 @@
       const watchRoot = (container && container.parentElement) || container || document.body;
       runtime.observer = new MutationObserver(() => {
         if (runtime.disposed) return;
+        if (Date.now() < runtime.ignoreChangeDetectionUntil) return;
         if (runtime.mutationTimer) {
           window.clearTimeout(runtime.mutationTimer);
         }
@@ -4248,6 +4379,7 @@
     }
 
     ensureInlineStyles();
+    runtime.ignoreChangeDetectionUntil = Date.now() + 1800;
     clearAllRowAnnotations();
     clearTabs();
 
@@ -4276,6 +4408,7 @@
 
     eligibleJobs.forEach((entry) => annotateRow(entry.job, entry));
     reorderRows(eligibleJobs, container);
+    runtime.currentSignature = computeJobSetSignature(eligibleJobs.map((entry) => entry.job));
 
     panel.setSubtitle(`Ranked ${eligibleJobs.length} jobs`);
 
@@ -4334,7 +4467,7 @@
       if (topStrong.length) {
         var strongNote = document.createElement("p");
         strongNote.className = "wwp-inline-note";
-        strongNote.style.color = "#86efac";
+        strongNote.style.color = "#2e7d32";
         strongNote.textContent = "Your strongest matches: " + topStrong.map(function (e) { return e[0]; }).join(", ");
         insightCard.appendChild(strongNote);
       }
