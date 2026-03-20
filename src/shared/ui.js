@@ -36,10 +36,22 @@
         color: #fff;
         border-bottom: 3px solid #FFC72C;
       }
-      .wwp-title { margin: 0; font-size: 14px; font-weight: 800; letter-spacing: -0.01em; color: #FFC72C; }
-      .wwp-subtitle { margin: 0; font-size: 11px; color: rgba(255,255,255,0.7); }
-      .wwp-header .wwp-button { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); color: #fff; }
-      .wwp-header .wwp-button:hover { background: rgba(255,255,255,0.18); border-color: #FFC72C; }
+      .wwp-title { margin: 0; font-size: 13px; font-weight: 700; letter-spacing: -0.01em; color: #FFC72C; }
+      .wwp-subtitle { margin: 0; font-size: 10px; color: rgba(255,255,255,0.6); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .wwp-header-btn {
+        appearance: none;
+        border: none;
+        border-radius: 4px;
+        padding: 4px 8px;
+        font-size: 11px;
+        font-weight: 600;
+        color: rgba(255,255,255,0.7);
+        background: rgba(255,255,255,0.08);
+        cursor: pointer;
+        transition: background 100ms ease, color 100ms ease;
+        line-height: 1;
+      }
+      .wwp-header-btn:hover { background: rgba(255,255,255,0.18); color: #fff; }
       .wwp-body { padding: 12px; display: grid; gap: 10px; }
       .wwp-card { border: 1px solid #e5e5e5; border-radius: 8px; padding: 10px; background: #fafafa; transition: border-color 100ms ease; }
       .wwp-section-title { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #996f00; }
@@ -377,17 +389,33 @@
     header.className = "wwp-header";
 
     const titleWrap = document.createElement("div");
+    titleWrap.style.display = "flex";
+    titleWrap.style.alignItems = "center";
+    titleWrap.style.gap = "8px";
+    titleWrap.style.minWidth = "0";
+
+    const headerIcon = document.createElement("img");
+    headerIcon.src = chrome.runtime.getURL("src/assets/icons/icon-16.png");
+    headerIcon.alt = "";
+    headerIcon.style.width = "16px";
+    headerIcon.style.height = "16px";
+    headerIcon.style.flexShrink = "0";
+
+    const titleTextWrap = document.createElement("div");
+    titleTextWrap.style.minWidth = "0";
     const title = document.createElement("h2");
     title.className = "wwp-title";
-    title.textContent = options.title || "WaterlooWorks+";
+    title.textContent = "WaterlooWorks +";
     const subtitle = document.createElement("p");
     subtitle.className = "wwp-subtitle";
-    subtitle.textContent = options.subtitle || "Client-side insights";
-    titleWrap.append(title, subtitle);
+    subtitle.textContent = options.subtitle || "";
+    titleTextWrap.append(title, subtitle);
+    titleWrap.append(headerIcon, titleTextWrap);
 
     const actions = document.createElement("div");
     actions.style.display = "flex";
-    actions.style.gap = "6px";
+    actions.style.gap = "4px";
+    actions.style.flexShrink = "0";
 
     const launcher = document.createElement("button");
     launcher.id = launcherId;
@@ -440,15 +468,17 @@
     }
 
     const closeBtn = document.createElement("button");
-    closeBtn.className = "wwp-button";
-    closeBtn.textContent = "Close";
+    closeBtn.className = "wwp-header-btn";
+    closeBtn.textContent = "\u2715";
+    closeBtn.title = "Close panel";
     closeBtn.addEventListener("click", hidePanel);
     actions.appendChild(closeBtn);
 
     if (typeof options.onDisablePage === "function") {
       const disableBtn = document.createElement("button");
-      disableBtn.className = "wwp-button";
-      disableBtn.textContent = options.disableButtonText || "Disable extension";
+      disableBtn.className = "wwp-header-btn";
+      disableBtn.textContent = "Off";
+      disableBtn.title = "Disable extension on this page";
       disableBtn.addEventListener("click", () => options.onDisablePage());
       actions.prepend(disableBtn);
     }

@@ -4235,8 +4235,7 @@
 
     const panel = ns.createShadowPanel({
       id: "wwp-listings-panel",
-      title: "WW+ Control Center",
-      subtitle: "Scanning listings...",
+      subtitle: "Scanning...",
       width: 420,
       onDisablePage: () => ns.disableCurrentPage()
     });
