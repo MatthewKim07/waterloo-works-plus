@@ -430,10 +430,10 @@
     launcher.style.width = "48px";
     launcher.style.height = "48px";
     launcher.style.borderRadius = "999px";
-    launcher.style.border = "1px solid #e6a800";
-    launcher.style.background = "#FFC72C";
+    launcher.style.border = "1px solid rgba(255, 255, 255, 0.12)";
+    launcher.style.background = "#2B2B2B";
     launcher.style.cursor = "pointer";
-    launcher.style.boxShadow = "0 4px 12px rgba(0, 0, 0, 0.15)";
+    launcher.style.boxShadow = "0 10px 24px rgba(0, 0, 0, 0.28)";
     launcher.style.display = "grid";
     launcher.style.placeItems = "center";
     launcher.style.padding = "0";
@@ -442,14 +442,16 @@
     const launcherLogo = document.createElement("img");
     launcherLogo.src = chrome.runtime.getURL("src/assets/icons/icon-48.png");
     launcherLogo.alt = "";
-    launcherLogo.style.width = "28px";
-    launcherLogo.style.height = "28px";
+    launcherLogo.style.width = "38px";
+    launcherLogo.style.height = "38px";
     launcherLogo.style.objectFit = "contain";
+    launcherLogo.style.display = "block";
+    launcherLogo.style.transform = "translate(-2px, 1px)";
     launcherLogo.style.pointerEvents = "none";
     launcherLogo.addEventListener("error", () => {
       launcher.innerHTML = "";
       launcher.textContent = options.launcherText || "WW+";
-      launcher.style.color = "#2B2B2B";
+      launcher.style.color = "#ffffff";
       launcher.style.font = "700 11px/1 -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
     });
     launcher.appendChild(launcherLogo);
