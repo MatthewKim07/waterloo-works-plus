@@ -3895,33 +3895,98 @@
   }
 
   function buildFlagsCard(scoredJobs, settings) {
-    const card = ns.makeCard("Strategic Flags");
-    const chips = document.createElement("div");
-    chips.className = "wwp-chip-wrap";
+    const resumeMap = ns.getResumeSkillMap(settings);
+    const card = document.createElement("div");
+    card.style.display = "grid";
+    card.style.gap = "10px";
 
+    // Categorize jobs by user-meaningful groups
+    const hardBlocked = [];
+    const highFit = [];
+    const remaining = [];
+
+    scoredJobs.forEach(function (entry) {
+      if (entry.hardDisqualifier) {
+        hardBlocked.push(entry);
+      } else if ((entry.overallMatch || 0) >= 68) {
+        highFit.push(entry);
+      } else {
+        remaining.push(entry);
+      }
+    });
+
+    // Summary stats
+    card.appendChild(ns.makeStatRow([
+      { value: String(highFit.length), label: "Strong Fit" },
+      { value: String(remaining.length), label: "Other" },
+      { value: String(hardBlocked.length), label: "Blocked" }
+    ]));
+
+    // Common constraints across all jobs
     const freq = new Map();
-    scoredJobs.forEach((entry) => {
-      (entry.flags || []).forEach((flag) => {
+    scoredJobs.forEach(function (entry) {
+      (entry.flags || []).forEach(function (flag) {
         freq.set(flag, (freq.get(flag) || 0) + 1);
       });
     });
 
-    Array.from(freq.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 8)
-      .forEach(([flag, count]) => {
-        chips.appendChild(ns.makeChip(`${flag} (${count})`, "warn"));
-      });
-
-    if (!freq.size) {
-      chips.appendChild(ns.makeChip("No major constraints detected across analyzed jobs", "good"));
+    if (freq.size) {
+      var constraintCard = ns.makeCard("Common Constraints");
+      var constraintList = document.createElement("ul");
+      constraintList.className = "wwp-clean-list";
+      Array.from(freq.entries())
+        .sort(function (a, b) { return b[1] - a[1]; })
+        .slice(0, 8)
+        .forEach(function (pair) {
+          var li = document.createElement("li");
+          li.textContent = pair[0] + " (" + pair[1] + " jobs)";
+          constraintList.appendChild(li);
+        });
+      constraintCard.appendChild(constraintList);
+      card.appendChild(constraintCard);
     }
 
-    const prefLine = document.createElement("p");
-    prefLine.className = "wwp-inline-note";
-    prefLine.textContent = `Preferences: term ${settings.preferences.workTerm}, role ${settings.preferences.targetRole || "(not set)"}, length ${settings.preferences.preferredTermLength}`;
+    // Blocked jobs section
+    if (hardBlocked.length) {
+      card.appendChild(ns.makeSectionLabel("Blocked (" + hardBlocked.length + ")"));
+      hardBlocked.slice(0, 5).forEach(function (entry) {
+        card.appendChild(buildJobCardForEntry(entry, resumeMap, {}));
+      });
+      if (hardBlocked.length > 5) {
+        var moreNote = document.createElement("p");
+        moreNote.className = "wwp-inline-note";
+        moreNote.textContent = "+" + (hardBlocked.length - 5) + " more blocked jobs";
+        card.appendChild(moreNote);
+      }
+    }
 
-    card.append(chips, prefLine);
+    // Profile preferences
+    var prefCard = ns.makeCard("Your Profile");
+    var prefList = document.createElement("ul");
+    prefList.className = "wwp-clean-list";
+    var prefItems = [
+      "Work term: " + (settings.preferences.workTerm || "Not set"),
+      "Target role: " + (settings.preferences.targetRole || "Not set"),
+      "Term length: " + (settings.preferences.preferredTermLength === "either" ? "Either" : settings.preferences.preferredTermLength + "-month"),
+      "Faculty: " + (settings.preferences.faculty || "Not set")
+    ];
+    prefItems.forEach(function (text) {
+      var li = document.createElement("li");
+      li.textContent = text;
+      prefList.appendChild(li);
+    });
+    prefCard.appendChild(prefList);
+
+    // Resume skill summary
+    if (resumeMap && resumeMap.size) {
+      var skillNote = document.createElement("p");
+      skillNote.className = "wwp-inline-note";
+      skillNote.textContent = resumeMap.size + " skills detected from your resume.";
+      prefCard.appendChild(skillNote);
+    }
+
+    card.appendChild(prefCard);
+
     return card;
   }
 
