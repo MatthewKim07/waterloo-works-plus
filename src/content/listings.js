@@ -3873,15 +3873,9 @@
         selectedHost.appendChild(pending.card);
       }
       tabs.activate("selected");
-      if (panel && typeof panel.setSubtitle === "function") {
-        panel.setSubtitle(`Selected: ${entry.job.title}`);
-      }
 
       if (opts.skipLiveRefresh) return;
       if (hasAccurateSelectedData(entry) && opts.requestAutoHydrate !== true && opts.requestLiveRefresh !== true) return;
-      if (panel && typeof panel.setSubtitle === "function") {
-        panel.setSubtitle(`Selected: ${selectedTitle} (loading full analysis...)`);
-      }
       const ticket = ++renderNonce;
       let hydratedFromLive = false;
       hydrateEntryForSelectedPanel(entry)
@@ -3904,17 +3898,8 @@
           rememberEntry(liveRefreshed);
           render(liveRefreshed, { showAccurate: true, skipLiveRefresh: true });
         })
-        .catch((_error) => {
-          if (ticket !== renderNonce) return;
-          if (panel && typeof panel.setSubtitle === "function") {
-            panel.setSubtitle(`Selected: ${selectedTitle} (auto-load failed; open posting for full fit)`);
-          }
-        })
-        .finally(() => {
-          if (ticket !== renderNonce) return;
-          if (!panel || typeof panel.setSubtitle !== "function") return;
-          panel.setSubtitle(hydratedFromLive ? `Selected: ${selectedTitle}` : `Selected: ${selectedTitle} (partial analysis shown)`);
-        });
+        .catch((_error) => {})
+        .finally(() => {});
     }
 
     const sorted = scoredJobs.slice().sort((a, b) => b.rankingScore - a.rankingScore);
