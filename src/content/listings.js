@@ -2725,37 +2725,35 @@
   }
 
   function buildSmartSearchCard(scoredJobs, settings, panel, targetContainer, onSelectEntry) {
-    const card = ns.makeCard("Smart Search");
+    const resumeMap = ns.getResumeSkillMap(settings);
+    const card = ns.makeCard("Discovery Engine");
 
-    const note = document.createElement("p");
-    note.className = "wwp-inline-note";
-    note.textContent = "Search by role or skills. Results are ranked by your resume match, constraints, and preference signals.";
-    card.appendChild(note);
-
+    // Search bar
     const inputRow = document.createElement("div");
     inputRow.className = "wwp-input-row";
     const queryInput = document.createElement("input");
     queryInput.type = "text";
     queryInput.className = "wwp-input";
-    queryInput.placeholder = 'Try: "software engineer", data analyst, backend, react';
+    queryInput.placeholder = "Search roles, skills, or companies...";
     const runBtn = document.createElement("button");
     runBtn.type = "button";
-    runBtn.className = "wwp-button";
+    runBtn.className = "wwp-button primary sm";
     runBtn.textContent = "Search";
     inputRow.append(queryInput, runBtn);
     card.appendChild(inputRow);
 
+    // Filter row
     const actionRow = document.createElement("div");
     actionRow.className = "wwp-inline-actions";
 
     const targetRoleBtn = document.createElement("button");
     targetRoleBtn.type = "button";
-    targetRoleBtn.className = "wwp-button";
-    targetRoleBtn.textContent = "Use My Target Role";
+    targetRoleBtn.className = "wwp-button sm ghost";
+    targetRoleBtn.textContent = "My Role";
 
     const clearBtn = document.createElement("button");
     clearBtn.type = "button";
-    clearBtn.className = "wwp-button";
+    clearBtn.className = "wwp-button sm ghost";
     clearBtn.textContent = "Clear";
 
     const hideToggleWrap = document.createElement("label");
@@ -2764,7 +2762,7 @@
     hideToggle.type = "checkbox";
     hideToggle.checked = false;
     const hideToggleText = document.createElement("span");
-    hideToggleText.textContent = "Only show matched rows";
+    hideToggleText.textContent = "Hide unmatched rows";
     hideToggleWrap.append(hideToggle, hideToggleText);
 
     actionRow.append(targetRoleBtn, clearBtn, hideToggleWrap);
@@ -2781,36 +2779,30 @@
 
     function renderResults(displayResults, queryCtx) {
       resultsWrap.innerHTML = "";
-      const list = displayResults.slice(0, 35);
+      const list = displayResults.slice(0, 30);
       if (!list.length) {
         const empty = document.createElement("p");
         empty.className = "wwp-inline-note";
         empty.textContent = queryCtx.hasQuery
-          ? "No strong matches on this loaded page. Try broader terms or disable WaterlooWorks filters."
-          : "Type a role or skill to run smart search.";
+          ? "No matches found. Try broader terms."
+          : "Enter a search to discover jobs.";
         resultsWrap.appendChild(empty);
         return;
       }
 
-      list.forEach((item, idx) => {
-        const entry = item.entry;
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "wwp-search-item";
-
-        const titleLine = document.createElement("div");
-        titleLine.textContent = `${idx + 1}. ${entry.job.title}`;
-        const metaLine = document.createElement("div");
-        metaLine.className = "meta";
-        metaLine.textContent = `${entry.job.company || "Unknown"} | Smart ${item.smartScore}% | Skill ${entry.skillMatch}% | Viability ${entry.viability.score}%`;
-
-        button.append(titleLine, metaLine);
-        button.addEventListener("click", () => {
-          if (typeof onSelectEntry === "function") onSelectEntry(entry);
-          openJobEntry(entry);
+      list.forEach(function (item) {
+        var entry = item.entry;
+        var insight = computeJobInsight(entry, resumeMap);
+        var jobCard = buildJobCardForEntry(entry, resumeMap, {
+          onApply: function () { openJobEntry(entry); },
+          onSelect: function () {
+            if (typeof onSelectEntry === "function") onSelectEntry(entry);
+          },
+          onClick: function () {
+            if (typeof onSelectEntry === "function") onSelectEntry(entry);
+          }
         });
-
-        resultsWrap.appendChild(button);
+        resultsWrap.appendChild(jobCard);
       });
     }
 
@@ -2834,20 +2826,14 @@
       const shown = displayResults.length;
       const total = scoredJobs.length;
       if (computed.queryCtx.hasQuery) {
-        if (activeFilter) {
-          status.textContent = `Showing ${shown} / ${total} jobs for "${query}".`;
-        } else if (shouldFilter && shown === 0) {
-          status.textContent = `No strong matches for "${query}" on this page. Showing baseline ranking instead.`;
-        } else {
-          status.textContent = `Smart-ranked ${total} jobs for "${query}" (rows not filtered).`;
-        }
+        status.textContent = `${shown} result${shown !== 1 ? "s" : ""} for "${query}"`;
       } else {
-        status.textContent = `Showing ranked baseline across ${total} jobs. Enter a query for targeted matches.`;
+        status.textContent = `${total} jobs ranked by fit`;
       }
 
       if (panel && typeof panel.setSubtitle === "function") {
         if (computed.queryCtx.hasQuery) {
-          panel.setSubtitle(activeFilter ? `Smart search: ${shown} matches` : `Smart search: ${shown} strong matches`);
+          panel.setSubtitle(`Discovery: ${shown} matches`);
         } else {
           panel.setSubtitle(`Ranked ${total} jobs`);
         }
