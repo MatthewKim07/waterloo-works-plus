@@ -58,23 +58,22 @@
   }
 
   function isSupportedCoopListingsPage() {
+    if (ns.wwDomAdapter && typeof ns.wwDomAdapter.isSupportedCoopListingsPage === "function") {
+      return ns.wwDomAdapter.isSupportedCoopListingsPage(location, document);
+    }
     const pathname = String(location.pathname || "").toLowerCase();
     if (!pathname.includes("/myaccount/co-op/")) return false;
-
     if (/\/myaccount\/co-op\/(direct|fullcycle|full-cycle)\/jobs\.htm/.test(pathname)) {
       return true;
     }
-
     if (/\/myaccount\/co-op\/.*jobs/.test(pathname)) {
       return true;
     }
-
     const bodyText = String(document.body ? document.body.textContent : "").toLowerCase();
     const hasJobTable = !!document.querySelector("table tr td");
     if (hasJobTable && /(job search|job title|organization|openings)/.test(bodyText)) {
       return true;
     }
-
     return false;
   }
 
