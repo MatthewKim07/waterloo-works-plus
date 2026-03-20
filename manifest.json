@@ -56,11 +56,13 @@
         "src/shared/autofill-resolvers.js",
         "src/shared/autofill-field-mapper.js",
         "src/shared/application-detectors.js",
+        "src/shared/application-reconciler.js",
         "src/content/common.js",
         "src/content/listings.js",
         "src/content/posting.js",
         "src/content/ratings.js",
-        "src/content/application-form.js"
+        "src/content/application-form.js",
+        "src/content/applications.js"
       ],
       "run_at": "document_idle"
     }
