@@ -1739,7 +1739,7 @@
       hardReasons: hard.reasons
     });
 
-    return {
+    const analysisBase = {
       parsed: safeParsed,
       skillMatch,
       baseSkillMatch,
@@ -1754,6 +1754,14 @@
       recommendation: rec,
       hardDisqualifier: hard.doNotApply,
       hardReasons: hard.reasons
+    };
+    const overlayModel =
+      ns.jobOverlayModel && typeof ns.jobOverlayModel.build === "function"
+        ? ns.jobOverlayModel.build(job, safeParsed, analysisBase)
+        : null;
+    return {
+      ...analysisBase,
+      overlayModel
     };
   }
 
