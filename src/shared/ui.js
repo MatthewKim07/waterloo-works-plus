@@ -11,17 +11,17 @@
         width: 340px;
         max-height: 86vh;
         overflow: auto;
-        background: #0f172a;
-        color: #e2e8f0;
-        border: 1px solid #1e293b;
-        border-radius: 14px;
+        background: #ffffff;
+        color: #2B2B2B;
+        border: 1px solid #e0e0e0;
+        border-radius: 12px;
         font: 13px/1.4 -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif;
-        box-shadow: 0 12px 40px rgba(2, 6, 23, 0.45);
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
         scrollbar-width: thin;
-        scrollbar-color: #334155 transparent;
+        scrollbar-color: #ccc transparent;
       }
       .wwp-panel::-webkit-scrollbar { width: 6px; }
-      .wwp-panel::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+      .wwp-panel::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
       .wwp-panel::-webkit-scrollbar-track { background: transparent; }
       .wwp-header {
         position: sticky;
@@ -32,61 +32,65 @@
         justify-content: space-between;
         gap: 8px;
         padding: 10px 12px;
-        background: linear-gradient(135deg, #0c1222 0%, #1a2744 50%, #1d4ed8 100%);
-        border-bottom: 1px solid #1e293b;
+        background: #2B2B2B;
+        color: #fff;
+        border-bottom: 3px solid #FFC72C;
       }
-      .wwp-title { margin: 0; font-size: 14px; font-weight: 800; letter-spacing: -0.01em; }
-      .wwp-subtitle { margin: 0; font-size: 11px; opacity: 0.75; }
+      .wwp-title { margin: 0; font-size: 14px; font-weight: 800; letter-spacing: -0.01em; color: #FFC72C; }
+      .wwp-subtitle { margin: 0; font-size: 11px; color: rgba(255,255,255,0.7); }
+      .wwp-header .wwp-button { background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.2); color: #fff; }
+      .wwp-header .wwp-button:hover { background: rgba(255,255,255,0.18); border-color: #FFC72C; }
       .wwp-body { padding: 12px; display: grid; gap: 10px; }
-      .wwp-card { border: 1px solid #1f2937; border-radius: 10px; padding: 10px; background: #111827; transition: border-color 100ms ease; }
-      .wwp-section-title { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #93c5fd; }
+      .wwp-card { border: 1px solid #e5e5e5; border-radius: 8px; padding: 10px; background: #fafafa; transition: border-color 100ms ease; }
+      .wwp-section-title { margin: 0 0 6px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #996f00; }
       .wwp-chip-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
-      .wwp-chip { padding: 3px 8px; border-radius: 999px; font-size: 11px; border: 1px solid #334155; background: #1f2937; }
-      .wwp-chip.warn { border-color: #f59e0b; color: #fcd34d; }
-      .wwp-chip.danger { border-color: #ef4444; color: #fca5a5; }
-      .wwp-chip.good { border-color: #22c55e; color: #86efac; }
-      .wwp-list { margin: 0; padding-left: 16px; display: grid; gap: 6px; }
-      .wwp-metric { display: grid; grid-template-columns: 1fr auto; gap: 8px; font-size: 12px; }
+      .wwp-chip { padding: 3px 8px; border-radius: 999px; font-size: 11px; border: 1px solid #ddd; background: #f5f5f5; color: #2B2B2B; }
+      .wwp-chip.warn { border-color: #e6a800; background: #fff8e1; color: #7a5700; }
+      .wwp-chip.danger { border-color: #e53935; background: #ffebee; color: #b71c1c; }
+      .wwp-chip.good { border-color: #2e7d32; background: #e8f5e9; color: #1b5e20; }
+      .wwp-list { margin: 0; padding-left: 16px; display: grid; gap: 6px; color: #2B2B2B; }
+      .wwp-metric { display: grid; grid-template-columns: 1fr auto; gap: 8px; font-size: 12px; color: #2B2B2B; }
       .wwp-progress {
         width: 100%;
         height: 8px;
         border-radius: 999px;
-        background: #1f2937;
+        background: #e5e5e5;
         overflow: hidden;
         margin-top: 4px;
       }
       .wwp-progress > span {
         display: block;
         height: 100%;
-        background: linear-gradient(90deg, #22d3ee, #22c55e);
+        background: linear-gradient(90deg, #FFC72C, #e6a800);
       }
       .wwp-button {
         appearance: none;
-        border: 1px solid #334155;
-        border-radius: 8px;
+        border: 1px solid #d0d0d0;
+        border-radius: 6px;
         padding: 6px 8px;
         font-size: 11px;
-        color: #e2e8f0;
-        background: #0b1220;
+        color: #2B2B2B;
+        background: #fff;
         cursor: pointer;
+        transition: border-color 100ms ease;
       }
-      .wwp-button:hover { border-color: #60a5fa; }
+      .wwp-button:hover { border-color: #FFC72C; }
       .wwp-input {
         width: 100%;
         appearance: none;
-        border: 1px solid #334155;
-        border-radius: 8px;
-        background: #0b1220;
-        color: #e2e8f0;
+        border: 1px solid #d0d0d0;
+        border-radius: 6px;
+        background: #fff;
+        color: #2B2B2B;
         padding: 8px 9px;
         font: inherit;
       }
       .wwp-input:focus {
         outline: none;
-        border-color: #60a5fa;
-        box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.18);
+        border-color: #FFC72C;
+        box-shadow: 0 0 0 3px rgba(255, 199, 44, 0.2);
       }
-      .wwp-input::placeholder { color: #94a3b8; }
+      .wwp-input::placeholder { color: #999; }
       .wwp-input-row {
         display: grid;
         grid-template-columns: 1fr auto;
@@ -104,7 +108,7 @@
         align-items: center;
         gap: 6px;
         font-size: 11px;
-        color: #cbd5e1;
+        color: #555;
       }
       .wwp-search-results {
         margin-top: 6px;
@@ -116,20 +120,21 @@
       .wwp-search-item {
         appearance: none;
         width: 100%;
-        border: 1px solid #334155;
+        border: 1px solid #e5e5e5;
         border-radius: 8px;
         padding: 8px;
-        background: #0b1220;
-        color: #dbeafe;
+        background: #fff;
+        color: #2B2B2B;
         text-align: left;
         font: inherit;
         cursor: pointer;
+        transition: border-color 100ms ease;
       }
-      .wwp-search-item:hover { border-color: #60a5fa; }
+      .wwp-search-item:hover { border-color: #FFC72C; }
       .wwp-search-item .meta {
         margin-top: 4px;
         font-size: 11px;
-        color: #93c5fd;
+        color: #777;
       }
       .wwp-kv { margin: 0; display: grid; gap: 4px; }
       .wwp-kv div { display: grid; grid-template-columns: 1fr auto; gap: 8px; font-size: 12px; }
@@ -140,16 +145,16 @@
         padding: 2px 8px;
         border-radius: 999px;
         font-size: 11px;
-        border: 1px solid #94a3b8;
-        background: #eff6ff;
-        color: #0f172a;
+        border: 1px solid #ccc;
+        background: #f5f5f5;
+        color: #2B2B2B;
         font-weight: 600;
       }
-      .wwp-mini-badge.good { border-color: #22c55e; background: #dcfce7; }
-      .wwp-mini-badge.warn { border-color: #f59e0b; background: #fef3c7; }
-      .wwp-mini-badge.bad { border-color: #ef4444; background: #fee2e2; }
-      .wwp-inline-note { margin: 4px 0 0; font-size: 11px; color: #94a3b8; }
-      .wwp-tabs { position: sticky; top: 0; z-index: 1; display: flex; gap: 6px; padding: 6px; background: #0b1220; border: 1px solid #1f2937; border-radius: 10px; }
+      .wwp-mini-badge.good { border-color: #2e7d32; background: #e8f5e9; color: #1b5e20; }
+      .wwp-mini-badge.warn { border-color: #e6a800; background: #fff8e1; color: #7a5700; }
+      .wwp-mini-badge.bad { border-color: #e53935; background: #ffebee; color: #b71c1c; }
+      .wwp-inline-note { margin: 4px 0 0; font-size: 11px; color: #888; }
+      .wwp-tabs { position: sticky; top: 0; z-index: 1; display: flex; gap: 2px; padding: 4px; background: #f5f5f5; border-bottom: 1px solid #e5e5e5; border-radius: 0; }
       .wwp-tab-btn {
         flex: 1;
         min-width: 0;
@@ -157,50 +162,53 @@
         overflow: hidden;
         text-overflow: ellipsis;
         appearance: none;
-        border: 1px solid #334155;
-        border-radius: 8px;
-        background: #0f172a;
-        color: #cbd5e1;
-        padding: 6px;
+        border: none;
+        border-radius: 6px;
+        background: transparent;
+        color: #777;
+        padding: 6px 4px;
         font-size: 11px;
+        font-weight: 600;
         cursor: pointer;
+        transition: color 100ms ease, background 100ms ease;
+        border-bottom: 2px solid transparent;
       }
-      .wwp-tab-btn:hover { border-color: #475569; color: #e2e8f0; }
-      .wwp-tab-btn.active { border-color: #60a5fa; color: #dbeafe; background: #1e293b; }
+      .wwp-tab-btn:hover { color: #2B2B2B; background: rgba(0,0,0,0.04); }
+      .wwp-tab-btn.active { color: #2B2B2B; background: #fff; border-bottom-color: #FFC72C; }
       .wwp-tab-pane { display: none; gap: 10px; }
       .wwp-tab-pane.active { display: grid; }
 
       /* Job card component */
       .wwp-job-card {
-        border: 1px solid #1f2937;
-        border-radius: 10px;
+        border: 1px solid #e5e5e5;
+        border-radius: 8px;
         padding: 10px 12px;
-        background: #111827;
+        background: #fff;
         display: grid;
         gap: 6px;
-        transition: border-color 100ms ease, background 100ms ease;
+        transition: border-color 100ms ease, box-shadow 100ms ease;
       }
-      .wwp-job-card:hover { border-color: #334155; background: #151d2e; }
+      .wwp-job-card:hover { border-color: #FFC72C; box-shadow: 0 2px 8px rgba(255, 199, 44, 0.12); }
       .wwp-job-card .wwp-jc-title {
         font-size: 13px;
         font-weight: 700;
-        color: #f1f5f9;
+        color: #1a1a1a;
         margin: 0;
         line-height: 1.3;
       }
       .wwp-job-card .wwp-jc-company {
         font-size: 11px;
-        color: #94a3b8;
+        color: #777;
         margin: 0;
       }
       .wwp-job-card .wwp-jc-insight {
         font-size: 11px;
-        color: #fbbf24;
+        color: #996f00;
         margin: 0;
         line-height: 1.35;
       }
-      .wwp-job-card .wwp-jc-insight.good { color: #86efac; }
-      .wwp-job-card .wwp-jc-insight.danger { color: #fca5a5; }
+      .wwp-job-card .wwp-jc-insight.good { color: #2e7d32; }
+      .wwp-job-card .wwp-jc-insight.danger { color: #c62828; }
       .wwp-job-card .wwp-jc-tags {
         display: flex;
         flex-wrap: wrap;
@@ -214,18 +222,18 @@
 
       /* Action button variants */
       .wwp-button.primary {
-        background: #1d4ed8;
-        border-color: #2563eb;
-        color: #fff;
+        background: #FFC72C;
+        border-color: #e6a800;
+        color: #2B2B2B;
         font-weight: 600;
       }
-      .wwp-button.primary:hover { background: #2563eb; border-color: #3b82f6; }
+      .wwp-button.primary:hover { background: #FFD54F; border-color: #FFC72C; }
       .wwp-button.ghost {
         background: transparent;
-        border-color: #334155;
-        color: #94a3b8;
+        border-color: #d0d0d0;
+        color: #777;
       }
-      .wwp-button.ghost:hover { color: #e2e8f0; border-color: #60a5fa; }
+      .wwp-button.ghost:hover { color: #2B2B2B; border-color: #FFC72C; }
       .wwp-button.sm { padding: 3px 7px; font-size: 10px; }
 
       /* Status badge */
@@ -238,11 +246,11 @@
         font-weight: 600;
         letter-spacing: 0.02em;
       }
-      .wwp-status-badge.not-applied { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
-      .wwp-status-badge.applied { background: rgba(37, 99, 235, 0.15); color: #60a5fa; border: 1px solid rgba(37, 99, 235, 0.3); }
-      .wwp-status-badge.interview { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
-      .wwp-status-badge.offer { background: rgba(34, 197, 94, 0.15); color: #86efac; border: 1px solid rgba(34, 197, 94, 0.3); }
-      .wwp-status-badge.rejected { background: rgba(239, 68, 68, 0.12); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.25); }
+      .wwp-status-badge.not-applied { background: #f5f5f5; color: #999; border: 1px solid #ddd; }
+      .wwp-status-badge.applied { background: #e3f2fd; color: #1565c0; border: 1px solid #90caf9; }
+      .wwp-status-badge.interview { background: #f3e5f5; color: #7b1fa2; border: 1px solid #ce93d8; }
+      .wwp-status-badge.offer { background: #e8f5e9; color: #2e7d32; border: 1px solid #81c784; }
+      .wwp-status-badge.rejected { background: #ffebee; color: #c62828; border: 1px solid #ef9a9a; }
 
       /* Section divider */
       .wwp-section-label {
@@ -250,10 +258,10 @@
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.06em;
-        color: #64748b;
+        color: #996f00;
         margin: 4px 0 0;
         padding-bottom: 4px;
-        border-bottom: 1px solid #1e293b;
+        border-bottom: 1px solid #e5e5e5;
       }
 
       /* Skill list with match indicators */
@@ -277,26 +285,27 @@
         border-radius: 50%;
         flex-shrink: 0;
       }
-      .wwp-skill-item .indicator.match { background: #22c55e; }
-      .wwp-skill-item .indicator.miss { background: #ef4444; }
-      .wwp-skill-item .indicator.partial { background: #f59e0b; }
-      .wwp-skill-item .label { color: #e2e8f0; }
-      .wwp-skill-item .label.muted { color: #64748b; text-decoration: line-through; }
+      .wwp-skill-item .indicator.match { background: #2e7d32; }
+      .wwp-skill-item .indicator.miss { background: #c62828; }
+      .wwp-skill-item .indicator.partial { background: #e6a800; }
+      .wwp-skill-item .label { color: #2B2B2B; }
+      .wwp-skill-item .label.muted { color: #aaa; text-decoration: line-through; }
 
       /* Insight box */
       .wwp-insight-box {
-        border: 1px solid #1e3a5f;
-        border-radius: 8px;
+        border: 1px solid #e0e0e0;
+        border-left: 3px solid #FFC72C;
+        border-radius: 4px;
         padding: 8px 10px;
-        background: rgba(30, 58, 138, 0.15);
+        background: #fffdf5;
         font-size: 11px;
-        color: #93c5fd;
+        color: #5a4500;
         line-height: 1.4;
       }
       .wwp-insight-box.warn {
-        border-color: rgba(245, 158, 11, 0.3);
-        background: rgba(245, 158, 11, 0.08);
-        color: #fcd34d;
+        border-left-color: #e6a800;
+        background: #fff8e1;
+        color: #7a5700;
       }
 
       /* Stat row */
@@ -310,19 +319,19 @@
         min-width: 60px;
         text-align: center;
         padding: 8px 6px;
-        border: 1px solid #1f2937;
+        border: 1px solid #e5e5e5;
         border-radius: 8px;
-        background: #0b1220;
+        background: #fafafa;
       }
       .wwp-stat .wwp-stat-value {
         font-size: 18px;
         font-weight: 700;
-        color: #f1f5f9;
+        color: #2B2B2B;
         line-height: 1;
       }
       .wwp-stat .wwp-stat-label {
         font-size: 10px;
-        color: #64748b;
+        color: #999;
         margin-top: 2px;
       }
 
@@ -333,9 +342,9 @@
         display: grid;
         gap: 4px;
         font-size: 12px;
-        color: #cbd5e1;
+        color: #444;
       }
-      .wwp-clean-list li::marker { color: #475569; }
+      .wwp-clean-list li::marker { color: #ccc; }
     `;
     shadowRoot.appendChild(style);
   }
@@ -393,10 +402,10 @@
     launcher.style.width = "48px";
     launcher.style.height = "48px";
     launcher.style.borderRadius = "999px";
-    launcher.style.border = "1px solid rgba(30, 58, 138, 0.65)";
-    launcher.style.background = "radial-gradient(circle at 30% 30%, #172554, #0f172a)";
+    launcher.style.border = "1px solid #e6a800";
+    launcher.style.background = "#FFC72C";
     launcher.style.cursor = "pointer";
-    launcher.style.boxShadow = "0 10px 24px rgba(2, 6, 23, 0.35)";
+    launcher.style.boxShadow = "0 4px 12px rgba(0, 0, 0, 0.15)";
     launcher.style.display = "grid";
     launcher.style.placeItems = "center";
     launcher.style.padding = "0";
@@ -412,7 +421,7 @@
     launcherLogo.addEventListener("error", () => {
       launcher.innerHTML = "";
       launcher.textContent = options.launcherText || "WW+";
-      launcher.style.color = "#eff6ff";
+      launcher.style.color = "#2B2B2B";
       launcher.style.font = "700 11px/1 -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif";
     });
     launcher.appendChild(launcherLogo);
