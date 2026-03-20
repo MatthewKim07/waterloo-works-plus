@@ -395,10 +395,10 @@
     titleWrap.style.minWidth = "0";
 
     const headerIcon = document.createElement("img");
-    headerIcon.src = chrome.runtime.getURL("src/assets/icons/icon-16.png");
+    headerIcon.src = chrome.runtime.getURL("src/assets/icons/icon-32.png");
     headerIcon.alt = "";
-    headerIcon.style.width = "16px";
-    headerIcon.style.height = "16px";
+    headerIcon.style.width = "20px";
+    headerIcon.style.height = "20px";
     headerIcon.style.flexShrink = "0";
 
     const titleTextWrap = document.createElement("div");
