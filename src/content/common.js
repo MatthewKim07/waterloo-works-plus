@@ -82,14 +82,15 @@
   };
 
   ns.detectPageType = function detectPageType(doc, locationLike) {
+    if (ns.wwDomAdapter && typeof ns.wwDomAdapter.detectPageType === "function") {
+      return ns.wwDomAdapter.detectPageType(doc, locationLike);
+    }
     const currentDoc = doc || document;
     const loc = locationLike || location;
-
     const url = `${loc.pathname} ${loc.search}`.toLowerCase();
     const bodyText = lower(currentDoc.body ? currentDoc.body.textContent : "");
     const title = lower(currentDoc.title || "");
     const pathname = String(loc.pathname || "").toLowerCase();
-
     if (
       /work\s*term\s*ratings|ratings/.test(title) ||
       (bodyText.includes("students hired") && bodyText.includes("work term")) ||
@@ -97,7 +98,6 @@
     ) {
       return "ratings";
     }
-
     if (
       /job\s*posting|position\s*description/.test(title) ||
       /jobid=|postingid=|\/posting\//.test(url) ||
@@ -106,7 +106,6 @@
     ) {
       return "posting";
     }
-
     if (
       (/job\s*list|my\s*applications|waterlooworks/.test(title) && /job|posting|co-op/.test(bodyText)) ||
       pathname.includes("/myaccount/co-op") ||
@@ -115,17 +114,13 @@
     ) {
       return "listings";
     }
-
-    // TODO: tighten selectors for WaterlooWorks-specific routing when exact URLs are confirmed.
     if (/\/jobs|\/postings|search/.test(url)) {
       return "listings";
     }
-
     const postingLinkCount = currentDoc.querySelectorAll("a[href*='job'], a[href*='posting'], a[href*='position']").length;
     if (postingLinkCount >= 8) {
       return "listings";
     }
-
     return "unknown";
   };
 

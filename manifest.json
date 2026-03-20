@@ -44,6 +44,8 @@
         "src/shared/ratings-parser.js",
         "src/shared/scoring.js",
         "src/shared/ui.js",
+        "src/shared/ww-selectors.js",
+        "src/shared/ww-dom-adapter.js",
         "src/content/common.js",
         "src/content/listings.js",
         "src/content/posting.js",
