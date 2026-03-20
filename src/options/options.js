@@ -621,6 +621,12 @@
 
     setResumeFileNameLabel("");
     renderSkillInventory(settings);
+
+    const trackerMountbyId = byId("trackerMount");
+    if (trackerMountbyId && ns.renderTrackerDashboard) {
+      const tstat = byId("trackerStatus");
+      ns.renderTrackerDashboard(trackerMountbyId, tstat).catch(() => {});
+    }
   }
 
   async function savePreferences() {
