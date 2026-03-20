@@ -43,13 +43,13 @@
 }
 
 tr.wwp-row-fit-strong > td {
-  box-shadow: inset 0 0 0 2px rgba(34, 197, 94, 0.35);
+  background: rgba(34, 197, 94, 0.04);
 }
 
 tr.wwp-row-fit-weak > td {
-  box-shadow: inset 0 0 0 2px rgba(248, 113, 113, 0.3);
+  background: rgba(37, 99, 235, 0.03);
 }
 
 tr.wwp-row-fit-block > td {
-  box-shadow: inset 0 0 0 2px rgba(239, 68, 68, 0.45);
+  background: rgba(239, 68, 68, 0.05);
 }
