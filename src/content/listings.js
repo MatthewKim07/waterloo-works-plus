@@ -3867,6 +3867,94 @@
     return card;
   }
 
+  function computeJobInsight(entry, resumeMap) {
+    var om = entry.overlayModel;
+    var parsed = entry.parsed;
+    if (!om) return { text: "", tone: "" };
+
+    if (om.signals && om.signals.hardBlock) {
+      var reasons = (om.signals.hardReasons || []);
+      return { text: reasons[0] || "Hard eligibility block", tone: "danger" };
+    }
+
+    var reqSkills = parsed && Array.isArray(parsed.requiredSkills) ? parsed.requiredSkills : [];
+    var missing = [];
+    var strong = [];
+    reqSkills.forEach(function (skill) {
+      if (resumeMap && resumeMap.has(skill)) {
+        strong.push(skill);
+      } else {
+        missing.push(skill);
+      }
+    });
+
+    var overall = om.scores ? om.scores.overallMatch : 0;
+
+    if (overall >= 72 && missing.length === 0) {
+      return { text: "Strong match — apply now", tone: "good" };
+    }
+    if (overall >= 72 && missing.length > 0) {
+      return { text: "Good fit, missing: " + missing.slice(0, 3).join(", "), tone: "good" };
+    }
+    if (missing.length > 0 && missing.length <= 3) {
+      return { text: "Missing: " + missing.join(", "), tone: "warn" };
+    }
+    if (missing.length > 3) {
+      return { text: "Missing " + missing.length + " skills: " + missing.slice(0, 3).join(", ") + "...", tone: "warn" };
+    }
+    if (strong.length > 0) {
+      return { text: "Strong in: " + strong.slice(0, 3).join(", "), tone: "good" };
+    }
+    if (overall >= 50) {
+      return { text: "Decent match — worth exploring", tone: "" };
+    }
+    return { text: "Weak match — consider as a reach", tone: "danger" };
+  }
+
+  function buildJobCardForEntry(entry, resumeMap, opts) {
+    var options = opts || {};
+    var om = entry.overlayModel || {};
+    var summary = om.summary || {};
+    var insight = computeJobInsight(entry, resumeMap);
+    var tags = [];
+    if (om.signals && om.signals.termLabel) {
+      tags.push({ label: om.signals.termLabel, tone: "" });
+    }
+    if (om.signals && om.signals.stackChips) {
+      om.signals.stackChips.slice(0, 3).forEach(function (s) {
+        tags.push({ label: s, tone: "good" });
+      });
+    }
+
+    var actions = [];
+    if (options.onApply) {
+      actions.push({ label: "Apply", variant: "primary", onClick: options.onApply });
+    }
+    if (options.onSelect) {
+      actions.push({ label: "View", variant: "ghost", onClick: options.onSelect });
+    }
+    if (options.onIgnore) {
+      actions.push({ label: "Ignore", variant: "ghost", onClick: options.onIgnore });
+    }
+
+    var card = ns.makeJobCard({
+      title: summary.title || entry.job.title || "Untitled",
+      company: summary.company || entry.job.company,
+      location: summary.location || entry.job.location,
+      insight: insight.text,
+      insightTone: insight.tone,
+      tags: tags,
+      actions: actions
+    });
+
+    if (options.onClick) {
+      card.style.cursor = "pointer";
+      card.addEventListener("click", options.onClick);
+    }
+
+    return card;
+  }
+
   async function run() {
     const pageType = ns.detectPageType(document, location);
     if (pageType !== "listings") return;
@@ -3942,11 +4030,11 @@
 
     const tabs = ns.createTabs(
       [
-        { id: "overview", label: "Overview" },
-        { id: "selected", label: "Selected Job" },
-        { id: "search", label: "Smart Search" },
-        { id: "rankings", label: "Rankings" },
-        { id: "flags", label: "Flags" }
+        { id: "overview", label: "Control" },
+        { id: "selected", label: "Analysis" },
+        { id: "search", label: "Discover" },
+        { id: "rankings", label: "Priority" },
+        { id: "flags", label: "Decisions" }
       ],
       "overview"
     );

@@ -163,6 +163,172 @@
       .wwp-tab-btn.active { border-color: #60a5fa; color: #dbeafe; background: #1e293b; }
       .wwp-tab-pane { display: none; gap: 10px; }
       .wwp-tab-pane.active { display: grid; }
+
+      /* Job card component */
+      .wwp-job-card {
+        border: 1px solid #1f2937;
+        border-radius: 10px;
+        padding: 10px 12px;
+        background: #111827;
+        display: grid;
+        gap: 6px;
+      }
+      .wwp-job-card:hover { border-color: #334155; }
+      .wwp-job-card .wwp-jc-title {
+        font-size: 13px;
+        font-weight: 700;
+        color: #f1f5f9;
+        margin: 0;
+        line-height: 1.3;
+      }
+      .wwp-job-card .wwp-jc-company {
+        font-size: 11px;
+        color: #94a3b8;
+        margin: 0;
+      }
+      .wwp-job-card .wwp-jc-insight {
+        font-size: 11px;
+        color: #fbbf24;
+        margin: 0;
+        line-height: 1.35;
+      }
+      .wwp-job-card .wwp-jc-insight.good { color: #86efac; }
+      .wwp-job-card .wwp-jc-insight.danger { color: #fca5a5; }
+      .wwp-job-card .wwp-jc-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+      }
+      .wwp-job-card .wwp-jc-actions {
+        display: flex;
+        gap: 6px;
+        margin-top: 2px;
+      }
+
+      /* Action button variants */
+      .wwp-button.primary {
+        background: #1d4ed8;
+        border-color: #2563eb;
+        color: #fff;
+        font-weight: 600;
+      }
+      .wwp-button.primary:hover { background: #2563eb; border-color: #3b82f6; }
+      .wwp-button.ghost {
+        background: transparent;
+        border-color: #334155;
+        color: #94a3b8;
+      }
+      .wwp-button.ghost:hover { color: #e2e8f0; border-color: #60a5fa; }
+      .wwp-button.sm { padding: 3px 7px; font-size: 10px; }
+
+      /* Status badge */
+      .wwp-status-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+      }
+      .wwp-status-badge.not-applied { background: #1e293b; color: #94a3b8; border: 1px solid #334155; }
+      .wwp-status-badge.applied { background: rgba(37, 99, 235, 0.15); color: #60a5fa; border: 1px solid rgba(37, 99, 235, 0.3); }
+      .wwp-status-badge.interview { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
+      .wwp-status-badge.offer { background: rgba(34, 197, 94, 0.15); color: #86efac; border: 1px solid rgba(34, 197, 94, 0.3); }
+      .wwp-status-badge.rejected { background: rgba(239, 68, 68, 0.12); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.25); }
+
+      /* Section divider */
+      .wwp-section-label {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #64748b;
+        margin: 4px 0 0;
+        padding-bottom: 4px;
+        border-bottom: 1px solid #1e293b;
+      }
+
+      /* Skill list with match indicators */
+      .wwp-skill-list {
+        display: grid;
+        gap: 3px;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .wwp-skill-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 11px;
+        padding: 3px 0;
+      }
+      .wwp-skill-item .indicator {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+      .wwp-skill-item .indicator.match { background: #22c55e; }
+      .wwp-skill-item .indicator.miss { background: #ef4444; }
+      .wwp-skill-item .indicator.partial { background: #f59e0b; }
+      .wwp-skill-item .label { color: #e2e8f0; }
+      .wwp-skill-item .label.muted { color: #64748b; text-decoration: line-through; }
+
+      /* Insight box */
+      .wwp-insight-box {
+        border: 1px solid #1e3a5f;
+        border-radius: 8px;
+        padding: 8px 10px;
+        background: rgba(30, 58, 138, 0.15);
+        font-size: 11px;
+        color: #93c5fd;
+        line-height: 1.4;
+      }
+      .wwp-insight-box.warn {
+        border-color: rgba(245, 158, 11, 0.3);
+        background: rgba(245, 158, 11, 0.08);
+        color: #fcd34d;
+      }
+
+      /* Stat row */
+      .wwp-stat-row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .wwp-stat {
+        flex: 1;
+        min-width: 60px;
+        text-align: center;
+        padding: 8px 6px;
+        border: 1px solid #1f2937;
+        border-radius: 8px;
+        background: #0b1220;
+      }
+      .wwp-stat .wwp-stat-value {
+        font-size: 18px;
+        font-weight: 700;
+        color: #f1f5f9;
+        line-height: 1;
+      }
+      .wwp-stat .wwp-stat-label {
+        font-size: 10px;
+        color: #64748b;
+        margin-top: 2px;
+      }
+
+      /* Clean bullet list */
+      .wwp-clean-list {
+        margin: 0;
+        padding-left: 14px;
+        display: grid;
+        gap: 4px;
+        font-size: 12px;
+        color: #cbd5e1;
+      }
+      .wwp-clean-list li::marker { color: #475569; }
     `;
     shadowRoot.appendChild(style);
   }
@@ -418,5 +584,117 @@
     badge.className = `wwp-mini-badge ${tone || ""}`.trim();
     badge.textContent = label;
     return badge;
+  };
+
+  ns.makeJobCard = function makeJobCard(options) {
+    var opts = options || {};
+    var card = document.createElement("div");
+    card.className = "wwp-job-card";
+
+    var title = document.createElement("p");
+    title.className = "wwp-jc-title";
+    title.textContent = opts.title || "Untitled";
+    card.appendChild(title);
+
+    var company = document.createElement("p");
+    company.className = "wwp-jc-company";
+    var companyParts = [];
+    if (opts.company) companyParts.push(opts.company);
+    if (opts.location) companyParts.push(opts.location);
+    company.textContent = companyParts.join(" \u2022 ");
+    card.appendChild(company);
+
+    if (opts.status) {
+      var badge = document.createElement("span");
+      badge.className = "wwp-status-badge " + (opts.status.replace(/\s+/g, "-").toLowerCase());
+      badge.textContent = opts.status;
+      card.appendChild(badge);
+    }
+
+    if (opts.insight) {
+      var insight = document.createElement("p");
+      insight.className = "wwp-jc-insight" + (opts.insightTone ? " " + opts.insightTone : "");
+      insight.textContent = opts.insight;
+      card.appendChild(insight);
+    }
+
+    if (opts.tags && opts.tags.length) {
+      var tagsWrap = document.createElement("div");
+      tagsWrap.className = "wwp-jc-tags";
+      opts.tags.forEach(function (tag) {
+        tagsWrap.appendChild(ns.makeChip(tag.label || tag, tag.tone || ""));
+      });
+      card.appendChild(tagsWrap);
+    }
+
+    if (opts.actions && opts.actions.length) {
+      var actionsWrap = document.createElement("div");
+      actionsWrap.className = "wwp-jc-actions";
+      opts.actions.forEach(function (action) {
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "wwp-button sm " + (action.variant || "ghost");
+        btn.textContent = action.label;
+        if (typeof action.onClick === "function") {
+          btn.addEventListener("click", function (e) {
+            e.stopPropagation();
+            action.onClick();
+          });
+        }
+        actionsWrap.appendChild(btn);
+      });
+      card.appendChild(actionsWrap);
+    }
+
+    return card;
+  };
+
+  ns.makeStatRow = function makeStatRow(stats) {
+    var row = document.createElement("div");
+    row.className = "wwp-stat-row";
+    (stats || []).forEach(function (stat) {
+      var cell = document.createElement("div");
+      cell.className = "wwp-stat";
+      var value = document.createElement("div");
+      value.className = "wwp-stat-value";
+      value.textContent = stat.value;
+      var label = document.createElement("div");
+      label.className = "wwp-stat-label";
+      label.textContent = stat.label;
+      cell.append(value, label);
+      row.appendChild(cell);
+    });
+    return row;
+  };
+
+  ns.makeInsightBox = function makeInsightBox(text, tone) {
+    var box = document.createElement("div");
+    box.className = "wwp-insight-box" + (tone ? " " + tone : "");
+    box.textContent = text;
+    return box;
+  };
+
+  ns.makeSectionLabel = function makeSectionLabel(text) {
+    var label = document.createElement("div");
+    label.className = "wwp-section-label";
+    label.textContent = text;
+    return label;
+  };
+
+  ns.makeSkillList = function makeSkillList(skills) {
+    var ul = document.createElement("ul");
+    ul.className = "wwp-skill-list";
+    (skills || []).forEach(function (skill) {
+      var li = document.createElement("li");
+      li.className = "wwp-skill-item";
+      var dot = document.createElement("span");
+      dot.className = "indicator " + (skill.match ? "match" : skill.partial ? "partial" : "miss");
+      var label = document.createElement("span");
+      label.className = "label" + (skill.match ? "" : skill.partial ? "" : " muted");
+      label.textContent = skill.name;
+      li.append(dot, label);
+      ul.appendChild(li);
+    });
+    return ul;
   };
 })(globalThis);
