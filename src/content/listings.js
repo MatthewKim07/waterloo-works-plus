@@ -4049,13 +4049,20 @@
     tabs.appendToTab("flags", buildFlagsCard(eligibleJobs, gate.settings));
   }
 
-  installProbeMessageListener();
-
   if (IS_BACKGROUND_PROBE_TAB) {
+    installProbeMessageListener();
     return;
   }
 
-  run().catch((error) => {
-    console.error("WaterlooWorks+ listings script failed", error);
-  });
+  (async () => {
+    try {
+      const settings = await ns.getSettings();
+      if (!settings.enabled) return;
+      if (!ns.isFeatureEnabled(settings, "smartOverlay")) return;
+      installProbeMessageListener();
+      await run();
+    } catch (error) {
+      console.error("WaterlooWorks+ listings script failed", error);
+    }
+  })();
 })(globalThis);

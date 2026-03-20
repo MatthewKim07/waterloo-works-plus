@@ -1,52 +1,46 @@
 (function initStorage(global) {
   const ns = (global.WWP = global.WWP || {});
 
+  if (typeof ns.migrateSettings !== "function" || !ns.SCHEMA) {
+    throw new Error("WaterlooWorks+: schema.js must load before storage.js");
+  }
+
   const STORAGE_KEYS = {
     settings: "wwpSettings",
     jobCache: "wwpJobAnalysisCache"
   };
-  const JOB_CACHE_SCHEMA_VERSION = 4;
 
-  const DEFAULT_SETTINGS = {
-    enabled: true,
-    disabledPaths: [],
-    resumeRawText: "",
-    resumeSkills: {},
-    manualSkills: {},
-    excludedResumeSkills: [],
-    preferences: {
-      workTerm: 1,
-      faculty: "Engineering",
-      targetRole: "",
-      industries: [],
-      preferredTermLength: "4",
-      globalDisableOnUnsupportedPages: false
-    }
-  };
+  const JOB_CACHE_SCHEMA_VERSION = ns.SCHEMA.JOB_CACHE_ENTRY_VERSION;
 
   function deepClone(obj) {
     return JSON.parse(JSON.stringify(obj));
   }
 
   function sanitizeSettings(input) {
-    const safe = deepClone(DEFAULT_SETTINGS);
-    if (!input || typeof input !== "object") {
-      return safe;
-    }
+    const migrated = ns.migrateSettings(input);
+    const safe = deepClone(ns.getDefaultSettingsShape());
 
-    safe.enabled = input.enabled !== false;
-    safe.disabledPaths = Array.isArray(input.disabledPaths)
-      ? input.disabledPaths.filter((x) => typeof x === "string")
+    safe.enabled = migrated.enabled !== false;
+
+    const ff = migrated.featureFlags && typeof migrated.featureFlags === "object" ? migrated.featureFlags : {};
+    safe.featureFlags = {
+      smartOverlay: ff.smartOverlay !== false,
+      autofill: ff.autofill === true,
+      applicationTracker: ff.applicationTracker === true
+    };
+
+    safe.disabledPaths = Array.isArray(migrated.disabledPaths)
+      ? migrated.disabledPaths.filter((x) => typeof x === "string")
       : [];
 
-    safe.resumeRawText = typeof input.resumeRawText === "string" ? input.resumeRawText : "";
-    safe.resumeSkills = input.resumeSkills && typeof input.resumeSkills === "object" ? input.resumeSkills : {};
-    safe.manualSkills = input.manualSkills && typeof input.manualSkills === "object" ? input.manualSkills : {};
-    safe.excludedResumeSkills = Array.isArray(input.excludedResumeSkills)
-      ? input.excludedResumeSkills.filter((x) => typeof x === "string" && x.trim())
+    safe.resumeRawText = typeof migrated.resumeRawText === "string" ? migrated.resumeRawText : "";
+    safe.resumeSkills = migrated.resumeSkills && typeof migrated.resumeSkills === "object" ? migrated.resumeSkills : {};
+    safe.manualSkills = migrated.manualSkills && typeof migrated.manualSkills === "object" ? migrated.manualSkills : {};
+    safe.excludedResumeSkills = Array.isArray(migrated.excludedResumeSkills)
+      ? migrated.excludedResumeSkills.filter((x) => typeof x === "string" && x.trim())
       : [];
 
-    const pref = input.preferences && typeof input.preferences === "object" ? input.preferences : {};
+    const pref = migrated.preferences && typeof migrated.preferences === "object" ? migrated.preferences : {};
     safe.preferences.workTerm = Number.isFinite(Number(pref.workTerm))
       ? Math.min(6, Math.max(1, Number(pref.workTerm)))
       : 1;
@@ -59,6 +53,8 @@
       ? pref.preferredTermLength
       : "4";
     safe.preferences.globalDisableOnUnsupportedPages = !!pref.globalDisableOnUnsupportedPages;
+
+    safe._schemaVersion = ns.SCHEMA.SETTINGS_VERSION;
 
     return safe;
   }
@@ -76,11 +72,16 @@
   }
 
   ns.STORAGE_KEYS = STORAGE_KEYS;
-  ns.DEFAULT_SETTINGS = DEFAULT_SETTINGS;
+  ns.DEFAULT_SETTINGS = ns.getDefaultSettingsShape();
+  ns.JOB_CACHE_SCHEMA_VERSION = JOB_CACHE_SCHEMA_VERSION;
 
   ns.getSettings = async function getSettings() {
     const result = await getLocalStorage([STORAGE_KEYS.settings]);
-    const settings = sanitizeSettings(result[STORAGE_KEYS.settings]);
+    const raw = result[STORAGE_KEYS.settings];
+    const settings = sanitizeSettings(raw);
+    if (ns.shouldPersistSettingsMigration(raw, settings)) {
+      await setLocalStorage({ [STORAGE_KEYS.settings]: settings });
+    }
     return settings;
   };
 
@@ -98,6 +99,10 @@
       preferences: {
         ...current.preferences,
         ...(partial && partial.preferences ? partial.preferences : {})
+      },
+      featureFlags: {
+        ...current.featureFlags,
+        ...(partial && partial.featureFlags ? partial.featureFlags : {})
       }
     };
     return ns.saveSettings(merged);
@@ -127,8 +132,8 @@
     const manualData = settings && settings.manualSkills ? settings.manualSkills : {};
     const excludedSet = new Set(
       Array.isArray(settings && settings.excludedResumeSkills)
-        ? settings.excludedResumeSkills.map((x) => String(x || "").trim().toLowerCase()).filter(Boolean)
-        : []
+      ? settings.excludedResumeSkills.map((x) => String(x || "").trim().toLowerCase()).filter(Boolean)
+      : []
     );
     const map = new Map();
 

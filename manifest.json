@@ -35,6 +35,7 @@
       ],
       "all_frames": true,
       "js": [
+        "src/shared/schema.js",
         "src/shared/storage.js",
         "src/shared/skills.js",
         "src/shared/utils.js",

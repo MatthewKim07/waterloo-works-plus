@@ -1,24 +1,11 @@
-const STORAGE_KEY_SETTINGS = "wwpSettings";
-
-const DEFAULT_SETTINGS = {
-  enabled: true,
-  disabledPaths: [],
-  resumeRawText: "",
-  resumeSkills: {},
-  preferences: {
-    workTerm: 1,
-    faculty: "Engineering",
-    targetRole: "",
-    industries: [],
-    preferredTermLength: "4",
-    globalDisableOnUnsupportedPages: false
-  }
-};
+importScripts("../shared/schema.js");
+importScripts("../shared/storage.js");
 
 chrome.runtime.onInstalled.addListener(async () => {
-  const current = await chrome.storage.local.get([STORAGE_KEY_SETTINGS]);
-  if (!current[STORAGE_KEY_SETTINGS]) {
-    await chrome.storage.local.set({ [STORAGE_KEY_SETTINGS]: DEFAULT_SETTINGS });
+  const key = globalThis.WWP.STORAGE_KEYS.settings;
+  const current = await chrome.storage.local.get([key]);
+  if (!current[key]) {
+    await chrome.storage.local.set({ [key]: globalThis.WWP.getDefaultSettingsShape() });
   }
 });
 
@@ -54,9 +41,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.type === "wwp:getSettings") {
-    chrome.storage.local.get([STORAGE_KEY_SETTINGS], (result) => {
-      sendResponse({ settings: result[STORAGE_KEY_SETTINGS] || DEFAULT_SETTINGS });
-    });
+    (async () => {
+      try {
+        const settings = await globalThis.WWP.getSettings();
+        sendResponse({ settings });
+      } catch (_error) {
+        sendResponse({ settings: globalThis.WWP.getDefaultSettingsShape() });
+      }
+    })();
     return true;
   }
 
