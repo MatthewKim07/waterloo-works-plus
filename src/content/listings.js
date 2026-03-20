@@ -2928,94 +2928,159 @@
   }
 
   function buildSelectedJobCard(entry, settings) {
-    const card = ns.makeCard("Selected Job Fit");
-    const title = document.createElement("p");
-    title.style.margin = "0 0 6px";
-    title.style.fontWeight = "700";
-    title.textContent = `${entry.job.title} @ ${entry.job.company || "Unknown company"}`;
+    const resumeMap = ns.getResumeSkillMap(settings);
+    const om = entry.overlayModel || {};
+    const summary = om.summary || {};
+    const parsed = entry.parsed || {};
 
-    const metrics = document.createElement("div");
-    metrics.appendChild(ns.makeProgressMetric("Skill Match", entry.skillMatch));
-    metrics.appendChild(ns.makeProgressMetric("Target Role Match", entry.targetRoleMatch || 0));
-    metrics.appendChild(ns.makeProgressMetric("Overall Match", entry.overallMatch || 0));
+    // Header card
+    const card = ns.makeCard();
+    const titleEl = document.createElement("p");
+    titleEl.className = "wwp-jc-title";
+    titleEl.textContent = summary.title || entry.job.title || "Untitled";
+    const companyEl = document.createElement("p");
+    companyEl.className = "wwp-jc-company";
+    var compParts = [];
+    if (summary.company || entry.job.company) compParts.push(summary.company || entry.job.company);
+    if (summary.location || entry.job.location) compParts.push(summary.location || entry.job.location);
+    companyEl.textContent = compParts.join(" \u2022 ");
+    card.append(titleEl, companyEl);
 
-    let fitLabel = "Low fit - likely skip";
-    let tone = "danger";
-    if (entry.hardDisqualifier) {
-      fitLabel = "Do not apply - confirmed not a fit";
-      tone = "danger";
-    } else if ((entry.overallMatch || 0) >= 75) {
-      fitLabel = "Strong fit - apply";
-      tone = "good";
-    } else if ((entry.overallMatch || 0) >= 60) {
-      fitLabel = "Decent fit - apply selectively";
-      tone = "good";
-    } else if ((entry.overallMatch || 0) >= 45) {
-      fitLabel = "Reach - apply if projects align strongly";
-      tone = "warn";
+    // Status + recommendation
+    const insight = computeJobInsight(entry, resumeMap);
+    if (insight.text) {
+      card.appendChild(ns.makeInsightBox(insight.text, insight.tone === "danger" ? "warn" : ""));
     }
 
-    const chips = document.createElement("div");
-    chips.className = "wwp-chip-wrap";
-    chips.appendChild(ns.makeChip(fitLabel, tone));
-    (entry.flags || []).slice(0, 5).forEach((flag) => chips.appendChild(ns.makeChip(flag, "warn")));
+    // Fit breakdown — human-readable
+    const fitCard = ns.makeCard();
+    const reqSkills = Array.isArray(entry.requiredSkills) ? entry.requiredSkills : [];
+    const prefSkills = Array.isArray(parsed.preferredSkills) ? parsed.preferredSkills : [];
+    const strongSkills = [];
+    const missingSkills = [];
 
-    const rec = ns.makeCard("Why");
-    const recList = document.createElement("ul");
-    recList.className = "wwp-list";
-    entry.recommendation.reasons.forEach((reason) => {
-      const li = document.createElement("li");
-      li.textContent = reason;
-      recList.appendChild(li);
+    reqSkills.forEach(function (skill) {
+      if (resumeMap.has(skill)) strongSkills.push(skill);
+      else missingSkills.push(skill);
+    });
+    prefSkills.forEach(function (skill) {
+      if (resumeMap.has(skill) && !strongSkills.includes(skill)) strongSkills.push(skill);
     });
 
-    const resumeMap = ns.getResumeSkillMap(settings);
-    const reqSkills = Array.isArray(entry.requiredSkills) ? entry.requiredSkills : [];
-    if (reqSkills.length) {
-      const matchedRequired = reqSkills.filter((skill) => (resumeMap.get(skill) || 0) > 0).length;
-      const coverage = Math.round((matchedRequired / Math.max(1, reqSkills.length)) * 100);
-      const li = document.createElement("li");
-      li.textContent = `Required skill coverage: ${matchedRequired}/${reqSkills.length} (${coverage}%).`;
-      recList.appendChild(li);
+    if (strongSkills.length || missingSkills.length) {
+      if (strongSkills.length) {
+        fitCard.appendChild(ns.makeSectionLabel("Strong Matches"));
+        fitCard.appendChild(ns.makeSkillList(strongSkills.slice(0, 8).map(function (s) {
+          return { name: s, match: true };
+        })));
+      }
+      if (missingSkills.length) {
+        fitCard.appendChild(ns.makeSectionLabel("Missing Skills"));
+        fitCard.appendChild(ns.makeSkillList(missingSkills.slice(0, 8).map(function (s) {
+          return { name: s, match: false };
+        })));
+      }
+    } else {
+      var noSkillNote = document.createElement("p");
+      noSkillNote.className = "wwp-inline-note";
+      noSkillNote.textContent = "No explicit skill requirements detected in this posting.";
+      fitCard.appendChild(noSkillNote);
     }
 
-    const topSkills = (entry.requiredSkills || []).slice(0, 6);
-    if (topSkills.length) {
-      const li = document.createElement("li");
-      li.textContent = `Key requirements: ${topSkills.join(", ")}`;
-      recList.appendChild(li);
+    // Requirements bullets
+    const rec = ns.makeCard();
+    const bullets = parsed.summaryBullets || [];
+    if (bullets.length) {
+      rec.appendChild(ns.makeSectionLabel("Key Requirements"));
+      var ul = document.createElement("ul");
+      ul.className = "wwp-clean-list";
+      bullets.slice(0, 6).forEach(function (b) {
+        var li = document.createElement("li");
+        li.textContent = b.length > 120 ? b.slice(0, 117) + "\u2026" : b;
+        ul.appendChild(li);
+      });
+      rec.appendChild(ul);
     }
 
-    rec.appendChild(recList);
+    // Constraint flags
+    if ((entry.flags || []).length) {
+      rec.appendChild(ns.makeSectionLabel("Constraints"));
+      var flagChips = document.createElement("div");
+      flagChips.className = "wwp-chip-wrap";
+      entry.flags.slice(0, 5).forEach(function (flag) {
+        flagChips.appendChild(ns.makeChip(flag, "warn"));
+      });
+      rec.appendChild(flagChips);
+    }
 
-    const pref = document.createElement("p");
-    pref.className = "wwp-inline-note";
-    pref.textContent = `Your prefs: term ${settings.preferences.workTerm}, role ${settings.preferences.targetRole || "(not set)"}, length ${settings.preferences.preferredTermLength}. Overall match blends skills, role alignment, and eligibility compatibility.`;
+    // Suggestions
+    const suggestions = [];
+    if (missingSkills.length > 0 && missingSkills.length <= 3) {
+      suggestions.push("Add a project featuring " + missingSkills.join(", ") + " to strengthen your match.");
+    } else if (missingSkills.length > 3) {
+      suggestions.push("Focus on gaining experience in " + missingSkills.slice(0, 2).join(" and ") + " — the most requested gaps.");
+    }
+    if ((entry.targetRoleMatch || 0) < 40 && entry.job.title) {
+      suggestions.push("Tailor your resume title/objective to align with \"" + entry.job.title + "\".");
+    }
+    if (entry.recommendation && entry.recommendation.reasons) {
+      entry.recommendation.reasons.slice(0, 1).forEach(function (r) {
+        if (!suggestions.some(function (s) { return s.includes(r.slice(0, 20)); })) {
+          suggestions.push(r);
+        }
+      });
+    }
 
-    card.append(title, metrics, chips, pref);
-    return { card, rec };
+    if (suggestions.length) {
+      const sugCard = ns.makeCard();
+      sugCard.appendChild(ns.makeSectionLabel("Suggestions"));
+      var sugList = document.createElement("ul");
+      sugList.className = "wwp-clean-list";
+      suggestions.slice(0, 3).forEach(function (s) {
+        var li = document.createElement("li");
+        li.textContent = s;
+        sugList.appendChild(li);
+      });
+      sugCard.appendChild(sugList);
+      rec.appendChild(sugCard);
+    }
+
+    // Actions
+    const actionsWrap = document.createElement("div");
+    actionsWrap.className = "wwp-jc-actions";
+    actionsWrap.style.marginTop = "6px";
+    var applyBtn = document.createElement("button");
+    applyBtn.type = "button";
+    applyBtn.className = "wwp-button primary sm";
+    applyBtn.textContent = "Apply";
+    applyBtn.addEventListener("click", function () { openJobEntry(entry); });
+    actionsWrap.appendChild(applyBtn);
+
+    card.append(actionsWrap);
+
+    return { card, rec: fitCard.children.length ? fitCard : null, suggestions: rec.children.length ? rec : null };
   }
 
   function buildSelectedJobPendingCard(entry) {
-    const card = ns.makeCard("Selected Job");
-    const title = document.createElement("p");
-    title.style.margin = "0 0 8px";
-    title.style.fontWeight = "700";
-    title.textContent = `${entry.job.title} @ ${entry.job.company || "Unknown company"}`;
+    const card = ns.makeCard();
+    const titleEl = document.createElement("p");
+    titleEl.className = "wwp-jc-title";
+    titleEl.textContent = entry.job.title || "Untitled";
+    const companyEl = document.createElement("p");
+    companyEl.className = "wwp-jc-company";
+    companyEl.textContent = entry.job.company || "";
 
-    const note = document.createElement("p");
+    var note = document.createElement("p");
     note.className = "wwp-inline-note";
-    note.textContent = "Accurate fit scores are shown only after you open this job's description.";
+    note.textContent = "Click the job title to load full analysis.";
 
-    const hint = document.createElement("ul");
-    hint.className = "wwp-list";
-    const li1 = document.createElement("li");
-    li1.textContent = "Click the job title link to open the posting.";
-    const li2 = document.createElement("li");
-    li2.textContent = "Once opened, WaterlooWorks+ will load full-match percentages in this tab.";
-    hint.append(li1, li2);
+    var applyBtn = document.createElement("button");
+    applyBtn.type = "button";
+    applyBtn.className = "wwp-button primary sm";
+    applyBtn.textContent = "Open Posting";
+    applyBtn.addEventListener("click", function () { openJobEntry(entry); });
 
-    card.append(title, note, hint);
+    card.append(titleEl, companyEl, note, applyBtn);
     return { card };
   }
 
@@ -3730,7 +3795,8 @@
       if (opts.showAccurate === true) {
         const blocks = buildSelectedJobCard(entry, settings);
         selectedHost.appendChild(blocks.card);
-        selectedHost.appendChild(blocks.rec);
+        if (blocks.rec) selectedHost.appendChild(blocks.rec);
+        if (blocks.suggestions) selectedHost.appendChild(blocks.suggestions);
       } else {
         const pending = buildSelectedJobPendingCard(entry);
         selectedHost.appendChild(pending.card);
