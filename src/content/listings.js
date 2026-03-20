@@ -12,6 +12,15 @@
   ns.__WWP_LISTINGS_RAN = true;
 
   function ensureInlineStyles() {
+    if (!document.getElementById("wwp-listings-overlay-css")) {
+      try {
+        const link = document.createElement("link");
+        link.id = "wwp-listings-overlay-css";
+        link.rel = "stylesheet";
+        link.href = chrome.runtime.getURL("src/content/listings-overlay.css");
+        document.head.appendChild(link);
+      } catch (_e) {}
+    }
     if (document.getElementById("wwp-inline-row-style")) return;
     const style = document.createElement("style");
     style.id = "wwp-inline-row-style";
@@ -1452,9 +1461,58 @@
 
   function annotateRow(job, analysis) {
     const row = job.row;
+    row.classList.remove("wwp-row-fit-strong", "wwp-row-fit-weak", "wwp-row-fit-block");
     row.querySelectorAll(":scope .wwp-row-badges, :scope .wwp-row-skills").forEach((node) => node.remove());
     row.dataset.wwpJobKey = job.key || "";
     row.__wwpEntry = analysis;
+
+    const om = analysis && analysis.overlayModel;
+    if (!om) return;
+
+    if (om.signals && om.signals.hardBlock) {
+      row.classList.add("wwp-row-fit-block");
+    } else if (om.scores && om.scores.overallMatch >= 72) {
+      row.classList.add("wwp-row-fit-strong");
+    } else if (om.scores && om.scores.overallMatch < 42) {
+      row.classList.add("wwp-row-fit-weak");
+    }
+
+    const cell =
+      (job.anchor && typeof job.anchor.closest === "function" && job.anchor.closest("td")) ||
+      row.querySelector("td:last-of-type") ||
+      row.querySelector("td");
+    if (!cell) return;
+
+    const strip = document.createElement("div");
+    strip.className = "wwp-row-badges wwp-row-badge-strip";
+
+    const fit = document.createElement("span");
+    fit.className = "wwp-row-badge wwp-badge-fit";
+    fit.textContent = `Fit ${om.scores ? om.scores.overallMatch : 0}%`;
+    strip.appendChild(fit);
+
+    if (om.signals && om.signals.termLabel) {
+      const el = document.createElement("span");
+      el.className = "wwp-row-badge wwp-badge-term";
+      el.textContent = om.signals.termLabel;
+      strip.appendChild(el);
+    }
+
+    (om.signals && om.signals.stackChips ? om.signals.stackChips : []).slice(0, 3).forEach((t) => {
+      const el = document.createElement("span");
+      el.className = "wwp-row-badge wwp-badge-skill";
+      el.textContent = t;
+      strip.appendChild(el);
+    });
+
+    if (om.signals && om.signals.docs && om.signals.docs.length) {
+      const el = document.createElement("span");
+      el.className = "wwp-row-badge wwp-badge-docs";
+      el.textContent = om.signals.docs.join(", ");
+      strip.appendChild(el);
+    }
+
+    cell.appendChild(strip);
   }
 
   function reorderRows(scoredJobs, targetContainer) {
@@ -1468,7 +1526,15 @@
 
   function clearAllRowAnnotations() {
     document.querySelectorAll("tr").forEach((row) => {
-      row.classList.remove("wwp-row-selected", "wwp-row-hidden-by-smart-search", "wwp-row-hidden-by-term-filter", "wwp-row-hidden-by-hard-filter");
+      row.classList.remove(
+        "wwp-row-selected",
+        "wwp-row-hidden-by-smart-search",
+        "wwp-row-hidden-by-term-filter",
+        "wwp-row-hidden-by-hard-filter",
+        "wwp-row-fit-strong",
+        "wwp-row-fit-weak",
+        "wwp-row-fit-block"
+      );
       if (row.dataset && row.dataset.wwpJobKey) {
         delete row.dataset.wwpJobKey;
       }

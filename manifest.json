@@ -61,6 +61,7 @@
   "web_accessible_resources": [
     {
       "resources": [
+        "src/content/listings-overlay.css",
         "src/assets/icons/icon-16.png",
         "src/assets/icons/icon-32.png",
         "src/assets/icons/icon-48.png",
