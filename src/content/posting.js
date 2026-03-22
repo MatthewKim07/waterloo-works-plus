@@ -113,11 +113,19 @@
     const parsed = ns.parseJobPosting(document);
     const resumeSkills = ns.getResumeSkillMap(gate.settings);
     const combinedText = `${document.title || ""} ${parsed.fullText || ""}`;
-
-    const skillMatch = ns.computeSkillMatch(resumeSkills, parsed.requiredSkills, parsed.preferredSkills, parsed.fullText, {
+    const skillBundle = ns.computeHybridSkillMatch({
+      resumeSkills,
+      resumeRawText: gate.settings.resumeRawText,
+      jobRequired: parsed.requiredSkills,
+      jobPreferred: parsed.preferredSkills,
+      fullText: parsed.fullText,
       requiredLines: parsed.requiredSentences,
-      preferredLines: parsed.preferredSentences
+      preferredLines: parsed.preferredSentences,
+      jobTitle: document.title || "",
+      targetRoleText: gate.settings.preferences.targetRole || "",
+      localSemanticEnabled: ns.isFeatureEnabled(gate.settings, "localSemanticAI")
     });
+    const skillMatch = skillBundle.skillMatch;
     const targetRoleMatch = ns.computeTargetRoleMatch(document.title || "", combinedText, gate.settings.preferences.targetRole);
     const fieldAlignment = ns.computeDegreeFieldAlignment(parsed.constraints, gate.settings);
     const termCompatibility = estimateTermCompatibilityFromConstraints(parsed.constraints, gate.settings.preferences.workTerm);
@@ -207,7 +215,8 @@
       `Posting text length parsed: ${parsed.fullText.length} characters`,
       `Required skills found: ${parsed.requiredSkills.length}`,
       `Preferred skills found: ${parsed.preferredSkills.length}`,
-      `Constraint flags found: ${collectChips(parsed.constraints).length}`
+      `Constraint flags found: ${collectChips(parsed.constraints).length}`,
+      `Local semantic AI boost: ${skillBundle.semanticApplied ? `on (${skillBundle.semanticSkillMatch}%)` : "off"}`
     ].forEach((item) => {
       const li = document.createElement("li");
       li.textContent = item;

@@ -1778,18 +1778,22 @@
     const fullText = String((safeParsed && safeParsed.fullText) || "");
     const analysisText = [job.title, job.company, job.location, job.snippet, fullText.slice(0, 2500)].join(" ");
 
-    const baseSkillMatch = ns.computeSkillMatch(
+    const skillBundle = ns.computeHybridSkillMatch({
       resumeSkills,
-      safeParsed.requiredSkills,
-      safeParsed.preferredSkills,
+      resumeRawText: settings.resumeRawText,
+      jobRequired: safeParsed.requiredSkills,
+      jobPreferred: safeParsed.preferredSkills,
       fullText,
-      {
-        requiredLines: safeParsed.requiredSentences,
-        preferredLines: safeParsed.preferredSentences
-      }
-    );
+      requiredLines: safeParsed.requiredSentences,
+      preferredLines: safeParsed.preferredSentences,
+      jobTitle: job.title,
+      targetRoleText: settings.preferences.targetRole || "",
+      localSemanticEnabled: ns.isFeatureEnabled(settings, "localSemanticAI")
+    });
+    const baseSkillMatch = skillBundle.baseSkillMatch;
+    const semanticSkillMatch = skillBundle.semanticSkillMatch;
     const keywordSkillMatch = computeResumeTextMatch(resumeSkills, analysisText, settings.preferences.targetRole);
-    const skillMatch = computeBlendedSkillMatch(baseSkillMatch, keywordSkillMatch, safeParsed);
+    const skillMatch = computeBlendedSkillMatch(skillBundle.skillMatch, keywordSkillMatch, safeParsed);
     const targetRoleMatch = ns.computeTargetRoleMatch(job.title, analysisText, settings.preferences.targetRole);
     const fieldAlignment = ns.computeDegreeFieldAlignment(safeParsed.constraints, settings);
 
@@ -1827,6 +1831,9 @@
       parsed: safeParsed,
       skillMatch,
       baseSkillMatch,
+      semanticSkillMatch,
+      semanticSkillDelta: skillBundle.semanticDelta,
+      semanticApplied: skillBundle.semanticApplied,
       keywordSkillMatch,
       targetRoleMatch,
       overallMatch,
@@ -2999,6 +3006,30 @@
     if (summary.location || entry.job.location) compParts.push(summary.location || entry.job.location);
     companyEl.textContent = compParts.join(" \u2022 ");
     card.append(titleEl, companyEl);
+
+    const metricsCard = ns.makeCard("Match Metrics");
+    metricsCard.appendChild(ns.makeProgressMetric("Skill Match", Number(entry.skillMatch) || 0));
+    metricsCard.appendChild(ns.makeProgressMetric("Target Role Match", Number(entry.targetRoleMatch) || 0));
+    metricsCard.appendChild(ns.makeProgressMetric("Overall Match", Number(entry.overallMatch) || 0));
+    if (entry.viability && Number.isFinite(entry.viability.score)) {
+      metricsCard.appendChild(ns.makeProgressMetric("Viability", Number(entry.viability.score) || 0));
+    }
+
+    if (Number.isFinite(entry.baseSkillMatch)) {
+      var baseSkillLine = document.createElement("p");
+      baseSkillLine.className = "wwp-inline-note";
+      baseSkillLine.textContent = `Deterministic skill score: ${Math.round(Number(entry.baseSkillMatch) || 0)}%`;
+      metricsCard.appendChild(baseSkillLine);
+    }
+    if (Number.isFinite(entry.semanticSkillMatch)) {
+      var semanticLine = document.createElement("p");
+      semanticLine.className = "wwp-inline-note";
+      var delta = Number.isFinite(entry.semanticSkillDelta) ? Number(entry.semanticSkillDelta) : 0;
+      var deltaText = delta >= 0 ? `+${Math.round(delta)}` : `${Math.round(delta)}`;
+      semanticLine.textContent = `Local semantic AI score: ${Math.round(Number(entry.semanticSkillMatch) || 0)}% (${deltaText} vs deterministic)`;
+      metricsCard.appendChild(semanticLine);
+    }
+    card.appendChild(metricsCard);
 
     // Status + recommendation
     const insight = computeJobInsight(entry, resumeMap);
