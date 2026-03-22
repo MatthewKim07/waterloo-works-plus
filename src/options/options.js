@@ -601,6 +601,8 @@
     if (flagAutofill) flagAutofill.checked = !!(settings.featureFlags && settings.featureFlags.autofill);
     const flagTracker = byId("flagTracker");
     if (flagTracker) flagTracker.checked = !!(settings.featureFlags && settings.featureFlags.applicationTracker);
+    const flagLocalSemanticAI = byId("flagLocalSemanticAI");
+    if (flagLocalSemanticAI) flagLocalSemanticAI.checked = !!(settings.featureFlags && settings.featureFlags.localSemanticAI);
 
     const resumeText = byId("resumeText");
     if (resumeText) resumeText.value = settings.resumeRawText || "";
@@ -637,11 +639,13 @@
 
     const flagAutofill = byId("flagAutofill");
     const flagTracker = byId("flagTracker");
+    const flagLocalSemanticAI = byId("flagLocalSemanticAI");
     const prev = settings.featureFlags || {};
     settings.featureFlags = {
       smartOverlay: prev.smartOverlay !== false,
-      autofill: !!(flagAutofill && flagAutofill.checked),
-      applicationTracker: !!(flagTracker && flagTracker.checked)
+      autofill: flagAutofill ? !!flagAutofill.checked : prev.autofill === true,
+      applicationTracker: flagTracker ? !!flagTracker.checked : prev.applicationTracker === true,
+      localSemanticAI: flagLocalSemanticAI ? !!flagLocalSemanticAI.checked : prev.localSemanticAI === true
     };
 
     const workTerm = byId("workTerm");
