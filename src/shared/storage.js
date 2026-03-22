@@ -26,7 +26,8 @@
     safe.featureFlags = {
       smartOverlay: ff.smartOverlay !== false,
       autofill: ff.autofill === true,
-      applicationTracker: ff.applicationTracker === true
+      applicationTracker: ff.applicationTracker === true,
+      localSemanticAI: ff.localSemanticAI === true
     };
 
     safe.disabledPaths = Array.isArray(migrated.disabledPaths)
