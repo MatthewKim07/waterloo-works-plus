@@ -15,12 +15,14 @@
   const DEFAULT_SMART_OVERLAY = true;
   const DEFAULT_AUTOFILL = false;
   const DEFAULT_APPLICATION_TRACKER = false;
+  const DEFAULT_LOCAL_SEMANTIC_AI = false;
 
   ns.getDefaultFeatureFlags = function getDefaultFeatureFlags() {
     return {
       smartOverlay: DEFAULT_SMART_OVERLAY,
       autofill: DEFAULT_AUTOFILL,
-      applicationTracker: DEFAULT_APPLICATION_TRACKER
+      applicationTracker: DEFAULT_APPLICATION_TRACKER,
+      localSemanticAI: DEFAULT_LOCAL_SEMANTIC_AI
     };
   };
 

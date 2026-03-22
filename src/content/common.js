@@ -78,6 +78,9 @@
     if (featureName === "applicationTracker") {
       return flags.applicationTracker === true;
     }
+    if (featureName === "localSemanticAI") {
+      return flags.localSemanticAI === true;
+    }
     return false;
   };
 

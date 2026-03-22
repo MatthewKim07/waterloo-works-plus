@@ -1,6 +1,11 @@
 (function initScoring(global) {
   const ns = (global.WWP = global.WWP || {});
   let aliasToKeyCache = null;
+  const SEMANTIC_VECTOR_DIM = 192;
+  const SEMANTIC_EMBED_CACHE_MAX = 180;
+  const SEMANTIC_MATCH_CACHE_MAX = 420;
+  const semanticEmbedCache = new Map();
+  const semanticMatchCache = new Map();
 
   const SKILL_EQUIVALENCE = {
     llm: ["openai api", "machine learning", "nlp"],
@@ -277,6 +282,312 @@
     }
 
     return ns.clamp(Math.round(score), 0, 100);
+  };
+
+  function trimCache(map, maxEntries) {
+    if (!(map instanceof Map)) return;
+    if (map.size <= maxEntries) return;
+    const toDelete = map.size - maxEntries;
+    let idx = 0;
+    for (const key of map.keys()) {
+      map.delete(key);
+      idx += 1;
+      if (idx >= toDelete) break;
+    }
+  }
+
+  function hash32(input) {
+    const text = String(input || "");
+    let hash = 2166136261;
+    for (let i = 0; i < text.length; i += 1) {
+      hash ^= text.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return hash >>> 0;
+  }
+
+  function textFingerprint(input) {
+    const text = ns.normalizeText(String(input || "").toLowerCase()).slice(0, 12000);
+    return hash32(text).toString(16);
+  }
+
+  function similarityToPercent(similarity) {
+    const raw = Number(similarity);
+    if (!Number.isFinite(raw)) return 0;
+    const s = ns.clamp(raw, -1, 1);
+    if (s <= 0) {
+      return Math.round((s + 1) * 18);
+    }
+    return Math.round(18 + s * 82);
+  }
+
+  function buildSkillListFromText(text) {
+    const inferred = extractSkillKeysFromText(text || "");
+    return Array.isArray(inferred) ? inferred : [];
+  }
+
+  function buildSemanticTokenFeatures(text) {
+    const normalized = ns.normalizeText(text).toLowerCase();
+    if (!normalized) return new Map();
+
+    const tokenCounts = new Map();
+    const tokens = ns
+      .tokenize(normalized)
+      .map((token) => ns.simpleStem(token))
+      .filter((token) => token && token.length >= 2)
+      .slice(0, 2400);
+
+    tokens.forEach((token) => {
+      tokenCounts.set(`tok:${token}`, (tokenCounts.get(`tok:${token}`) || 0) + 1);
+
+      if (token.length >= 4) {
+        for (let i = 0; i <= token.length - 3; i += 1) {
+          const tri = token.slice(i, i + 3);
+          tokenCounts.set(`tri:${tri}`, (tokenCounts.get(`tri:${tri}`) || 0) + 1);
+        }
+      }
+    });
+
+    const grams = ns.generateNgrams(tokens.slice(0, 1600), 2, 2).slice(0, 1400);
+    grams.forEach((gram) => {
+      tokenCounts.set(`bg:${gram}`, (tokenCounts.get(`bg:${gram}`) || 0) + 1);
+    });
+
+    const inferredSkills = buildSkillListFromText(normalized);
+    inferredSkills.forEach((skill) => {
+      const canonical = resolveSkillKey(skill);
+      if (canonical) {
+        tokenCounts.set(`skill:${canonical}`, (tokenCounts.get(`skill:${canonical}`) || 0) + 2.4);
+      }
+    });
+
+    return tokenCounts;
+  }
+
+  function buildSemanticEmbedding(text) {
+    const fp = textFingerprint(text);
+    if (semanticEmbedCache.has(fp)) {
+      return semanticEmbedCache.get(fp);
+    }
+
+    const features = buildSemanticTokenFeatures(text);
+    const vec = new Float32Array(SEMANTIC_VECTOR_DIM);
+
+    for (const [feature, count] of features.entries()) {
+      const baseWeight = Math.sqrt(Math.max(0, Number(count) || 0));
+      if (baseWeight <= 0) continue;
+
+      const h1 = hash32(feature);
+      const i1 = h1 % SEMANTIC_VECTOR_DIM;
+      const s1 = h1 & 1 ? 1 : -1;
+      vec[i1] += s1 * baseWeight;
+
+      const h2 = hash32(`${feature}::2`);
+      const i2 = h2 % SEMANTIC_VECTOR_DIM;
+      const s2 = h2 & 1 ? 1 : -1;
+      vec[i2] += s2 * baseWeight * 0.5;
+    }
+
+    let norm = 0;
+    for (let i = 0; i < vec.length; i += 1) {
+      norm += vec[i] * vec[i];
+    }
+    const length = Math.sqrt(norm);
+    if (length > 0) {
+      for (let i = 0; i < vec.length; i += 1) {
+        vec[i] /= length;
+      }
+    }
+
+    semanticEmbedCache.set(fp, vec);
+    trimCache(semanticEmbedCache, SEMANTIC_EMBED_CACHE_MAX);
+    return vec;
+  }
+
+  function cosineSimilarity(vecA, vecB) {
+    if (!vecA || !vecB || vecA.length !== vecB.length) return 0;
+    let dot = 0;
+    for (let i = 0; i < vecA.length; i += 1) {
+      dot += vecA[i] * vecB[i];
+    }
+    return ns.clamp(dot, -1, 1);
+  }
+
+  function computeConceptCoverage(resumeCanonicalSet, candidateSkills) {
+    const skills = ns.unique((candidateSkills || []).map((skill) => resolveSkillKey(skill)).filter(Boolean));
+    if (!skills.length) return null;
+    const matched = skills.filter((skill) => hasResumeSkill(resumeCanonicalSet, skill)).length;
+    return {
+      matched,
+      total: skills.length,
+      ratio: skills.length ? matched / skills.length : 0
+    };
+  }
+
+  function computeLocalSemanticSkillScore(payload) {
+    const data = payload || {};
+    const resumeMap = asSkillMap(data.resumeSkills);
+    const resumeCanonicalSet = buildResumeCanonicalSet(resumeMap);
+    const resumeSkillBlob = Array.from(resumeMap.keys()).join(" ");
+    const resumeRawText = String(data.resumeRawText || "");
+    const resumeCorpus = `${resumeSkillBlob} ${resumeRawText}`.trim().slice(0, 20000);
+
+    const requiredLines = Array.isArray(data.requiredLines) ? data.requiredLines : [];
+    const preferredLines = Array.isArray(data.preferredLines) ? data.preferredLines : [];
+    const requiredSkillList = ns.unique((data.jobRequired || []).map((skill) => resolveSkillKey(skill)).filter(Boolean));
+    const preferredSkillList = ns.unique((data.jobPreferred || []).map((skill) => resolveSkillKey(skill)).filter(Boolean));
+
+    const requiredCorpus = `${requiredSkillList.join(" ")} ${requiredLines.join(" ")}`.trim();
+    const preferredCorpus = `${preferredSkillList.join(" ")} ${preferredLines.join(" ")}`.trim();
+    const fullText = String(data.fullText || "");
+    const jobTitle = String(data.jobTitle || "");
+    const targetRoleText = String(data.targetRoleText || "");
+
+    if (!resumeCorpus || (!requiredCorpus && !preferredCorpus && !fullText)) {
+      return { available: false, score: null };
+    }
+
+    const semanticKey = [
+      textFingerprint(resumeCorpus),
+      textFingerprint(requiredCorpus),
+      textFingerprint(preferredCorpus),
+      textFingerprint(fullText.slice(0, 4200)),
+      textFingerprint(jobTitle),
+      textFingerprint(targetRoleText),
+      requiredSkillList.join("|"),
+      preferredSkillList.join("|")
+    ].join("::");
+    if (semanticMatchCache.has(semanticKey)) {
+      return semanticMatchCache.get(semanticKey);
+    }
+
+    const resumeVec = buildSemanticEmbedding(resumeCorpus);
+    const requiredVec = buildSemanticEmbedding(requiredCorpus || fullText.slice(0, 2800));
+    const preferredVec = buildSemanticEmbedding(preferredCorpus || fullText.slice(0, 2200));
+    const fullVec = buildSemanticEmbedding(`${jobTitle} ${fullText}`.slice(0, 6000));
+
+    const requiredCoverage =
+      computeConceptCoverage(resumeCanonicalSet, requiredSkillList.length ? requiredSkillList : buildSkillListFromText(requiredCorpus));
+    const preferredCoverage = computeConceptCoverage(
+      resumeCanonicalSet,
+      preferredSkillList.length ? preferredSkillList : buildSkillListFromText(preferredCorpus)
+    );
+
+    const requiredSimilarity = similarityToPercent(cosineSimilarity(resumeVec, requiredVec));
+    const preferredSimilarity = similarityToPercent(cosineSimilarity(resumeVec, preferredVec));
+    const fullSimilarity = similarityToPercent(cosineSimilarity(resumeVec, fullVec));
+
+    let roleSimilarity = null;
+    if (targetRoleText.trim()) {
+      const roleVec = buildSemanticEmbedding(targetRoleText);
+      roleSimilarity = similarityToPercent(cosineSimilarity(roleVec, fullVec));
+    }
+
+    const requiredCoveragePct = requiredCoverage ? requiredCoverage.ratio * 100 : null;
+    const preferredCoveragePct = preferredCoverage ? preferredCoverage.ratio * 100 : null;
+
+    let score = 0;
+    if (requiredCoveragePct != null) {
+      score += requiredCoveragePct * 0.58;
+    } else {
+      score += requiredSimilarity * 0.46;
+    }
+    if (preferredCoveragePct != null) {
+      score += preferredCoveragePct * 0.14;
+    } else {
+      score += preferredSimilarity * 0.07;
+    }
+    score += requiredSimilarity * 0.14;
+    score += fullSimilarity * 0.12;
+    if (roleSimilarity != null) {
+      score += roleSimilarity * 0.1;
+    }
+
+    if (requiredCoverage && requiredCoverage.total >= 4) {
+      if (requiredCoverage.ratio >= 0.7) score += 9;
+      else if (requiredCoverage.ratio >= 0.5) score += 4;
+      else if (requiredCoverage.ratio < 0.3) score -= 10;
+    }
+
+    if (roleSimilarity != null && roleSimilarity < 30) {
+      score -= 6;
+    }
+
+    const out = {
+      available: true,
+      score: ns.clamp(Math.round(score), 0, 100),
+      requiredCoverage,
+      preferredCoverage,
+      requiredSimilarity,
+      preferredSimilarity,
+      fullSimilarity,
+      roleSimilarity
+    };
+    semanticMatchCache.set(semanticKey, out);
+    trimCache(semanticMatchCache, SEMANTIC_MATCH_CACHE_MAX);
+    return out;
+  }
+
+  ns.computeHybridSkillMatch = function computeHybridSkillMatch(payload) {
+    const data = payload || {};
+    const baseSkillMatch = ns.computeSkillMatch(
+      data.resumeSkills,
+      data.jobRequired,
+      data.jobPreferred,
+      data.fullText,
+      {
+        requiredLines: data.requiredLines,
+        preferredLines: data.preferredLines
+      }
+    );
+
+    if (!data.localSemanticEnabled) {
+      return {
+        skillMatch: baseSkillMatch,
+        baseSkillMatch,
+        semanticSkillMatch: null,
+        semanticApplied: false,
+        semanticDelta: 0,
+        semanticDetails: null
+      };
+    }
+
+    const semantic = computeLocalSemanticSkillScore(data);
+    if (!semantic || !semantic.available || !Number.isFinite(semantic.score)) {
+      return {
+        skillMatch: baseSkillMatch,
+        baseSkillMatch,
+        semanticSkillMatch: null,
+        semanticApplied: false,
+        semanticDelta: 0,
+        semanticDetails: null
+      };
+    }
+
+    let blended = Math.round(baseSkillMatch * 0.64 + semantic.score * 0.36);
+
+    if (semantic.requiredCoverage && semantic.requiredCoverage.total >= 3) {
+      if (semantic.requiredCoverage.ratio >= 0.65) {
+        blended = Math.max(blended, Math.round(baseSkillMatch * 0.72 + semantic.score * 0.28 + 4));
+      }
+      if (semantic.requiredCoverage.ratio < 0.28 && baseSkillMatch > 36) {
+        blended = Math.max(0, blended - 7);
+      }
+    }
+
+    if (semantic.roleSimilarity != null && semantic.roleSimilarity < 28) {
+      blended = Math.max(0, blended - 5);
+    }
+
+    blended = ns.clamp(blended, 0, 100);
+    return {
+      skillMatch: blended,
+      baseSkillMatch,
+      semanticSkillMatch: semantic.score,
+      semanticApplied: true,
+      semanticDelta: blended - baseSkillMatch,
+      semanticDetails: semantic
+    };
   };
 
   function parseTermFromLabel(label) {
