@@ -422,6 +422,7 @@
     if (existingLauncher) existingLauncher.remove();
     const explicitPanelPosition = normalizePositionInput(options.panelPosition);
     const explicitLauncherPosition = normalizePositionInput(options.launcherPosition);
+    const initialOpen = options.initialOpen !== false;
 
     const host = document.createElement("div");
     host.id = hostId;
@@ -512,13 +513,17 @@
     });
     launcher.appendChild(launcherLogo);
 
+    let suppressLauncherUntil = 0;
+
     function showPanel() {
+      if (Date.now() < suppressLauncherUntil) return;
       host.style.display = "block";
       launcher.style.display = "none";
       clampPanelPosition();
     }
 
     function hidePanel() {
+      suppressLauncherUntil = Date.now() + 250;
       host.style.display = "none";
       launcher.style.display = "grid";
       clampLauncherPosition();
@@ -531,7 +536,11 @@
     closeBtn.className = "wwp-header-btn";
     closeBtn.textContent = "\u2715";
     closeBtn.title = "Close panel";
-    closeBtn.addEventListener("click", hidePanel);
+    closeBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      hidePanel();
+    });
     actions.appendChild(closeBtn);
 
     if (typeof options.onDisablePage === "function") {
@@ -539,7 +548,11 @@
       disableBtn.className = "wwp-header-btn";
       disableBtn.textContent = "Off";
       disableBtn.title = "Disable extension on this page";
-      disableBtn.addEventListener("click", () => options.onDisablePage());
+      disableBtn.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        options.onDisablePage();
+      });
       actions.prepend(disableBtn);
     }
 
@@ -649,6 +662,11 @@
 
     setInitialPanelPosition();
     setInitialLauncherPosition();
+    if (!initialOpen) {
+      host.style.display = "none";
+      launcher.style.display = "grid";
+      clampLauncherPosition();
+    }
 
     let panelDrag = null;
     let launcherDrag = null;
@@ -675,6 +693,7 @@
 
     const onLauncherPointerDown = (event) => {
       if (event.button !== 0) return;
+      if (Date.now() < suppressLauncherUntil) return;
       launcherDrag = {
         pointerId: event.pointerId,
         startX: event.clientX,
@@ -773,6 +792,9 @@
       },
       getLauncherPosition() {
         return captureFixedPosition(launcher);
+      },
+      isOpen() {
+        return host.style.display !== "none";
       },
       open() {
         showPanel();

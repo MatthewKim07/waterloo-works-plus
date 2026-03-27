@@ -4230,7 +4230,8 @@
           panelPosition:
             typeof runtime.panel.getPanelPosition === "function" ? runtime.panel.getPanelPosition() : null,
           launcherPosition:
-            typeof runtime.panel.getLauncherPosition === "function" ? runtime.panel.getLauncherPosition() : null
+            typeof runtime.panel.getLauncherPosition === "function" ? runtime.panel.getLauncherPosition() : null,
+          isOpen: typeof runtime.panel.isOpen === "function" ? runtime.panel.isOpen() : true
         };
       }
       if (runtime.selection && typeof runtime.selection.dispose === "function") {
@@ -4271,6 +4272,7 @@
       width: 420,
       panelPosition: persistedUiState && persistedUiState.panelPosition ? persistedUiState.panelPosition : null,
       launcherPosition: persistedUiState && persistedUiState.launcherPosition ? persistedUiState.launcherPosition : null,
+      initialOpen: !(persistedUiState && persistedUiState.isOpen === false),
       onDisablePage: () => ns.disableCurrentPage()
     });
     runtime.panel = panel;
