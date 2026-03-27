@@ -63,6 +63,11 @@
     }
   }
 
+  function isExtensionContextInvalidatedError(error) {
+    const text = String((error && error.message) || error || "").toLowerCase();
+    return /extension context invalidated|context invalidated|message channel closed|receiving end does not exist/.test(text);
+  }
+
   function isAllowedJobUrl(url) {
     return typeof ns.isWaterlooWorksUrl === "function" ? ns.isWaterlooWorksUrl(url) : false;
   }
@@ -4201,9 +4206,11 @@
     if (prevRuntime && typeof prevRuntime.dispose === "function") {
       prevRuntime.dispose();
     }
+    const persistedUiState = ns.__WWP_LISTINGS_PANEL_UI_STATE || null;
 
     const runtime = {
       disposed: false,
+      panel: null,
       selection: null,
       observer: null,
       pollTimer: 0,
@@ -4218,9 +4225,18 @@
     runtime.dispose = () => {
       if (runtime.disposed) return;
       runtime.disposed = true;
+      if (runtime.panel) {
+        ns.__WWP_LISTINGS_PANEL_UI_STATE = {
+          panelPosition:
+            typeof runtime.panel.getPanelPosition === "function" ? runtime.panel.getPanelPosition() : null,
+          launcherPosition:
+            typeof runtime.panel.getLauncherPosition === "function" ? runtime.panel.getLauncherPosition() : null
+        };
+      }
       if (runtime.selection && typeof runtime.selection.dispose === "function") {
         runtime.selection.dispose();
       }
+      runtime.panel = null;
       runtime.selection = null;
       if (runtime.observer) {
         runtime.observer.disconnect();
@@ -4253,8 +4269,11 @@
       id: "wwp-listings-panel",
       subtitle: "Scanning...",
       width: 420,
+      panelPosition: persistedUiState && persistedUiState.panelPosition ? persistedUiState.panelPosition : null,
+      launcherPosition: persistedUiState && persistedUiState.launcherPosition ? persistedUiState.launcherPosition : null,
       onDisablePage: () => ns.disableCurrentPage()
     });
+    runtime.panel = panel;
 
     const tabs = ns.createTabs(
       [
@@ -4280,6 +4299,7 @@
         runtime.rerunTimer = 0;
         if (runtime.disposed) return;
         run().catch((error) => {
+          if (isExtensionContextInvalidatedError(error)) return;
           console.error("WaterlooWorks+ listings refresh failed", error);
         });
       }, 450);
@@ -4342,7 +4362,6 @@
     const jobs = found.jobs;
     const container = found.container;
     runtime.currentSignature = computeJobSetSignature(jobs);
-    installRefreshWatchers(container);
 
     if (!jobs.length) {
       clearTabs();
@@ -4351,8 +4370,28 @@
         '<p class="wwp-inline-note">No job rows were detected in the main results container yet. Try toggling table filters or refreshing.</p>';
       tabs.appendToTab("overview", summaryCard);
       panel.setSubtitle("No listings detected");
+      runtime.pageClickHandler = (event) => {
+        if (runtime.disposed) return;
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        const clickable = target.closest("a, button, [role='button']");
+        if (!clickable) return;
+        const label = ns.normalizeText(clickable.textContent || "");
+        const aria = String(clickable.getAttribute("aria-label") || "").toLowerCase();
+        if (!/all jobs/.test(label) && !/all jobs/.test(aria)) return;
+        window.setTimeout(() => {
+          if (runtime.disposed) return;
+          run().catch((error) => {
+            if (isExtensionContextInvalidatedError(error)) return;
+            console.error("WaterlooWorks+ listings refresh failed", error);
+          });
+        }, 280);
+      };
+      document.addEventListener("click", runtime.pageClickHandler, true);
       return;
     }
+
+    installRefreshWatchers(container);
 
     ensureInlineStyles();
     runtime.ignoreChangeDetectionUntil = Date.now() + 1800;
@@ -4520,6 +4559,7 @@
       installProbeMessageListener();
       await run();
     } catch (error) {
+      if (isExtensionContextInvalidatedError(error)) return;
       console.error("WaterlooWorks+ listings script failed", error);
     }
   })();
