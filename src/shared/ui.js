@@ -361,21 +361,75 @@
     shadowRoot.appendChild(style);
   }
 
+  function parsePixelValue(value, fallback) {
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    const parsed = Number.parseFloat(String(value || ""));
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  function clampNumber(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function normalizePositionInput(input) {
+    if (!input || typeof input !== "object") return null;
+    const left = parsePixelValue(input.left, Number.NaN);
+    const top = parsePixelValue(input.top, Number.NaN);
+    if (!Number.isFinite(left) || !Number.isFinite(top)) return null;
+    return { left, top };
+  }
+
+  function captureFixedPosition(node) {
+    if (!node) return null;
+    const rect = node.getBoundingClientRect();
+    const styleLeft = parsePixelValue(node.style.left, Number.NaN);
+    const styleTop = parsePixelValue(node.style.top, Number.NaN);
+    const left = Number.isFinite(styleLeft) ? styleLeft : rect.left;
+    const top = Number.isFinite(styleTop) ? styleTop : rect.top;
+    if (!Number.isFinite(left) || !Number.isFinite(top)) return null;
+    return { left, top };
+  }
+
+  function isDraggablePanelTarget(target) {
+    if (!(target instanceof Element)) return true;
+    if (target.closest(".wwp-header-btn, .wwp-tab-btn")) return false;
+    if (target.closest("a, button, input, textarea, select, option, label")) return false;
+    if (target.getAttribute("role") === "button") return false;
+    return true;
+  }
+
   ns.createShadowPanel = function createShadowPanel(opts) {
     const options = opts || {};
     const hostId = options.id || "wwp-panel-host";
     const launcherId = `${hostId}-launcher`;
+    const viewportMargin = 8;
 
     const existing = document.getElementById(hostId);
+    const preservedPanelPosition = captureFixedPosition(existing);
+    if (existing && typeof existing.__wwpCleanup === "function") {
+      try {
+        existing.__wwpCleanup();
+      } catch (_error) {}
+    }
     if (existing) existing.remove();
     const existingLauncher = document.getElementById(launcherId);
+    const preservedLauncherPosition = captureFixedPosition(existingLauncher);
+    if (existingLauncher && typeof existingLauncher.__wwpCleanup === "function") {
+      try {
+        existingLauncher.__wwpCleanup();
+      } catch (_error) {}
+    }
     if (existingLauncher) existingLauncher.remove();
+    const explicitPanelPosition = normalizePositionInput(options.panelPosition);
+    const explicitLauncherPosition = normalizePositionInput(options.launcherPosition);
+    const initialOpen = options.initialOpen !== false;
 
     const host = document.createElement("div");
     host.id = hostId;
     host.style.position = "fixed";
+    host.style.left = "12px";
     host.style.top = options.top || "74px";
-    host.style.right = options.right || "12px";
+    host.style.right = "auto";
     host.style.zIndex = "2147483646";
 
     const shadow = host.attachShadow({ mode: "open" });
@@ -387,6 +441,7 @@
 
     const header = document.createElement("header");
     header.className = "wwp-header";
+    header.style.cursor = "move";
 
     const titleWrap = document.createElement("div");
     titleWrap.style.display = "flex";
@@ -424,8 +479,10 @@
     launcher.setAttribute("aria-label", "Open WaterlooWorks+");
     launcher.title = "";
     launcher.style.position = "fixed";
-    launcher.style.right = options.launcherRight || "14px";
-    launcher.style.bottom = options.launcherBottom || "18px";
+    launcher.style.left = "14px";
+    launcher.style.top = "18px";
+    launcher.style.right = "auto";
+    launcher.style.bottom = "auto";
     launcher.style.zIndex = "2147483645";
     launcher.style.width = "48px";
     launcher.style.height = "48px";
@@ -456,14 +513,20 @@
     });
     launcher.appendChild(launcherLogo);
 
+    let suppressLauncherUntil = 0;
+
     function showPanel() {
+      if (Date.now() < suppressLauncherUntil) return;
       host.style.display = "block";
       launcher.style.display = "none";
+      clampPanelPosition();
     }
 
     function hidePanel() {
+      suppressLauncherUntil = Date.now() + 250;
       host.style.display = "none";
       launcher.style.display = "grid";
+      clampLauncherPosition();
       if (typeof options.onClose === "function") {
         options.onClose();
       }
@@ -473,7 +536,11 @@
     closeBtn.className = "wwp-header-btn";
     closeBtn.textContent = "\u2715";
     closeBtn.title = "Close panel";
-    closeBtn.addEventListener("click", hidePanel);
+    closeBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      hidePanel();
+    });
     actions.appendChild(closeBtn);
 
     if (typeof options.onDisablePage === "function") {
@@ -481,7 +548,11 @@
       disableBtn.className = "wwp-header-btn";
       disableBtn.textContent = "Off";
       disableBtn.title = "Disable extension on this page";
-      disableBtn.addEventListener("click", () => options.onDisablePage());
+      disableBtn.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        options.onDisablePage();
+      });
       actions.prepend(disableBtn);
     }
 
@@ -493,8 +564,219 @@
     panel.append(header, body);
     shadow.appendChild(panel);
     document.documentElement.appendChild(host);
-    launcher.addEventListener("click", showPanel);
     document.documentElement.appendChild(launcher);
+
+    function getPanelSize() {
+      const rect = panel.getBoundingClientRect();
+      const fallbackWidth = parsePixelValue(options.width, 340);
+      return {
+        width: rect.width || fallbackWidth,
+        height: rect.height || 320
+      };
+    }
+
+    function getLauncherSize() {
+      const rect = launcher.getBoundingClientRect();
+      return {
+        width: rect.width || 48,
+        height: rect.height || 48
+      };
+    }
+
+    function clampPanelPosition() {
+      const size = getPanelSize();
+      const maxX = Math.max(viewportMargin, window.innerWidth - size.width - viewportMargin);
+      const maxY = Math.max(viewportMargin, window.innerHeight - size.height - viewportMargin);
+      const currentX = parsePixelValue(host.style.left, maxX);
+      const currentY = parsePixelValue(host.style.top, viewportMargin);
+      host.style.left = `${Math.round(clampNumber(currentX, viewportMargin, maxX))}px`;
+      host.style.top = `${Math.round(clampNumber(currentY, viewportMargin, maxY))}px`;
+      host.style.right = "auto";
+    }
+
+    function clampLauncherPosition() {
+      const size = getLauncherSize();
+      const maxX = Math.max(viewportMargin, window.innerWidth - size.width - viewportMargin);
+      const maxY = Math.max(viewportMargin, window.innerHeight - size.height - viewportMargin);
+      const currentX = parsePixelValue(launcher.style.left, maxX);
+      const currentY = parsePixelValue(launcher.style.top, maxY);
+      launcher.style.left = `${Math.round(clampNumber(currentX, viewportMargin, maxX))}px`;
+      launcher.style.top = `${Math.round(clampNumber(currentY, viewportMargin, maxY))}px`;
+      launcher.style.right = "auto";
+      launcher.style.bottom = "auto";
+    }
+
+    function setInitialPanelPosition() {
+      if (explicitPanelPosition) {
+        host.style.left = `${Math.round(explicitPanelPosition.left)}px`;
+        host.style.top = `${Math.round(explicitPanelPosition.top)}px`;
+        host.style.right = "auto";
+        clampPanelPosition();
+        return;
+      }
+      if (preservedPanelPosition) {
+        host.style.left = `${Math.round(preservedPanelPosition.left)}px`;
+        host.style.top = `${Math.round(preservedPanelPosition.top)}px`;
+        host.style.right = "auto";
+        clampPanelPosition();
+        return;
+      }
+      const size = getPanelSize();
+      const top = parsePixelValue(options.top, 74);
+      const right = parsePixelValue(options.right, 12);
+      const x = window.innerWidth - size.width - right;
+      host.style.left = `${Math.round(x)}px`;
+      host.style.top = `${Math.round(top)}px`;
+      host.style.right = "auto";
+      clampPanelPosition();
+    }
+
+    function setInitialLauncherPosition() {
+      if (explicitLauncherPosition) {
+        launcher.style.left = `${Math.round(explicitLauncherPosition.left)}px`;
+        launcher.style.top = `${Math.round(explicitLauncherPosition.top)}px`;
+        launcher.style.right = "auto";
+        launcher.style.bottom = "auto";
+        clampLauncherPosition();
+        return;
+      }
+      if (preservedLauncherPosition) {
+        launcher.style.left = `${Math.round(preservedLauncherPosition.left)}px`;
+        launcher.style.top = `${Math.round(preservedLauncherPosition.top)}px`;
+        launcher.style.right = "auto";
+        launcher.style.bottom = "auto";
+        clampLauncherPosition();
+        return;
+      }
+      const size = getLauncherSize();
+      const right = parsePixelValue(options.launcherRight, 14);
+      const bottom = parsePixelValue(options.launcherBottom, 18);
+      const x = window.innerWidth - size.width - right;
+      const y = window.innerHeight - size.height - bottom;
+      launcher.style.left = `${Math.round(x)}px`;
+      launcher.style.top = `${Math.round(y)}px`;
+      launcher.style.right = "auto";
+      launcher.style.bottom = "auto";
+      clampLauncherPosition();
+    }
+
+    setInitialPanelPosition();
+    setInitialLauncherPosition();
+    if (!initialOpen) {
+      host.style.display = "none";
+      launcher.style.display = "grid";
+      clampLauncherPosition();
+    }
+
+    let panelDrag = null;
+    let launcherDrag = null;
+
+    const onPanelPointerDown = (event) => {
+      if (event.button !== 0) return;
+      if (!isDraggablePanelTarget(event.target)) {
+        return;
+      }
+      panelDrag = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        startLeft: parsePixelValue(host.style.left, 0),
+        startTop: parsePixelValue(host.style.top, 0)
+      };
+      try {
+        panel.setPointerCapture(event.pointerId);
+      } catch (_error) {}
+      document.documentElement.style.userSelect = "none";
+      header.style.cursor = "grabbing";
+      event.preventDefault();
+    };
+
+    const onLauncherPointerDown = (event) => {
+      if (event.button !== 0) return;
+      if (Date.now() < suppressLauncherUntil) return;
+      launcherDrag = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        startLeft: parsePixelValue(launcher.style.left, 0),
+        startTop: parsePixelValue(launcher.style.top, 0),
+        moved: false
+      };
+      try {
+        launcher.setPointerCapture(event.pointerId);
+      } catch (_error) {}
+      document.documentElement.style.userSelect = "none";
+    };
+
+    const onWindowPointerMove = (event) => {
+      if (panelDrag && event.pointerId === panelDrag.pointerId) {
+        const dx = event.clientX - panelDrag.startX;
+        const dy = event.clientY - panelDrag.startY;
+        host.style.left = `${Math.round(panelDrag.startLeft + dx)}px`;
+        host.style.top = `${Math.round(panelDrag.startTop + dy)}px`;
+        clampPanelPosition();
+        return;
+      }
+
+      if (launcherDrag && event.pointerId === launcherDrag.pointerId) {
+        const dx = event.clientX - launcherDrag.startX;
+        const dy = event.clientY - launcherDrag.startY;
+        if (Math.abs(dx) > 3 || Math.abs(dy) > 3) launcherDrag.moved = true;
+        launcher.style.left = `${Math.round(launcherDrag.startLeft + dx)}px`;
+        launcher.style.top = `${Math.round(launcherDrag.startTop + dy)}px`;
+        clampLauncherPosition();
+      }
+    };
+
+    const onWindowPointerUp = (event) => {
+      if (panelDrag && event.pointerId === panelDrag.pointerId) {
+        panelDrag = null;
+        document.documentElement.style.userSelect = "";
+        header.style.cursor = "move";
+      }
+
+      if (launcherDrag && event.pointerId === launcherDrag.pointerId) {
+        const moved = launcherDrag.moved;
+        launcherDrag = null;
+        document.documentElement.style.userSelect = "";
+        clampLauncherPosition();
+        if (!moved) {
+          showPanel();
+        }
+      }
+    };
+
+    const onLauncherKeyDown = (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        showPanel();
+      }
+    };
+
+    const onWindowResize = () => {
+      clampPanelPosition();
+      clampLauncherPosition();
+    };
+
+    panel.addEventListener("pointerdown", onPanelPointerDown);
+    launcher.addEventListener("pointerdown", onLauncherPointerDown);
+    launcher.addEventListener("keydown", onLauncherKeyDown);
+    window.addEventListener("pointermove", onWindowPointerMove);
+    window.addEventListener("pointerup", onWindowPointerUp);
+    window.addEventListener("pointercancel", onWindowPointerUp);
+    window.addEventListener("resize", onWindowResize);
+
+    const cleanup = () => {
+      panel.removeEventListener("pointerdown", onPanelPointerDown);
+      launcher.removeEventListener("pointerdown", onLauncherPointerDown);
+      launcher.removeEventListener("keydown", onLauncherKeyDown);
+      window.removeEventListener("pointermove", onWindowPointerMove);
+      window.removeEventListener("pointerup", onWindowPointerUp);
+      window.removeEventListener("pointercancel", onWindowPointerUp);
+      window.removeEventListener("resize", onWindowResize);
+    };
+    host.__wwpCleanup = cleanup;
+    launcher.__wwpCleanup = cleanup;
 
     return {
       host,
@@ -504,6 +786,15 @@
       body,
       setSubtitle(text) {
         subtitle.textContent = text;
+      },
+      getPanelPosition() {
+        return captureFixedPosition(host);
+      },
+      getLauncherPosition() {
+        return captureFixedPosition(launcher);
+      },
+      isOpen() {
+        return host.style.display !== "none";
       },
       open() {
         showPanel();
@@ -524,10 +815,12 @@
     const state = {
       activeId: initialId || (defs[0] ? defs[0].id : null),
       buttons: new Map(),
-      panes: new Map()
+      panes: new Map(),
+      onChange: null
     };
 
-    function setActive(id) {
+    function setActive(id, meta) {
+      const prevId = state.activeId;
       state.activeId = id;
       state.buttons.forEach((btn, key) => {
         btn.classList.toggle("active", key === id);
@@ -535,6 +828,9 @@
       state.panes.forEach((pane, key) => {
         pane.classList.toggle("active", key === id);
       });
+      if (prevId !== id && typeof state.onChange === "function") {
+        state.onChange(id, prevId, meta || { source: "api" });
+      }
     }
 
     defs.forEach((def, index) => {
@@ -545,7 +841,7 @@
       btn.type = "button";
       btn.className = "wwp-tab-btn";
       btn.textContent = label;
-      btn.addEventListener("click", () => setActive(id));
+      btn.addEventListener("click", () => setActive(id, { source: "user" }));
       nav.appendChild(btn);
 
       const pane = document.createElement("section");
@@ -575,7 +871,10 @@
       },
       activate(id) {
         if (!state.panes.has(id)) return;
-        setActive(id);
+        setActive(id, { source: "api" });
+      },
+      setOnChange(handler) {
+        state.onChange = typeof handler === "function" ? handler : null;
       },
       appendToTab(id, node) {
         const pane = state.panes.get(id);

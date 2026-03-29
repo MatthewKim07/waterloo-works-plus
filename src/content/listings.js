@@ -29,6 +29,7 @@
       .wwp-row-hidden-by-smart-search { display: none !important; }
       .wwp-row-hidden-by-term-filter { display: none !important; }
       .wwp-row-hidden-by-hard-filter { display: none !important; }
+      .wwp-row-hidden-by-ranking-filter { display: none !important; }
       .wwp-listings-pending { opacity: 0 !important; pointer-events: none !important; }
       html.wwp-suppress-posting-ui .ui-dialog,
       html.wwp-suppress-posting-ui .ui-widget-overlay,
@@ -61,6 +62,11 @@
     } catch (_error) {
       return null;
     }
+  }
+
+  function isExtensionContextInvalidatedError(error) {
+    const text = String((error && error.message) || error || "").toLowerCase();
+    return /extension context invalidated|context invalidated|message channel closed|receiving end does not exist/.test(text);
   }
 
   function isAllowedJobUrl(url) {
@@ -1376,6 +1382,18 @@
     };
   }
 
+  function getContainerScopeRoot(container) {
+    if (!(container instanceof Element)) return null;
+    return (
+      container.closest("table") ||
+      container.closest("[role='grid']") ||
+      container.closest(".ui-datatable") ||
+      container.closest(".p-datatable") ||
+      container.parentElement ||
+      null
+    );
+  }
+
   function findJobRows() {
     const anchors = Array.from(document.querySelectorAll("a"));
     const strictCandidates = [];
@@ -1414,11 +1432,25 @@
       }
     }
 
-    if (!candidates.length) {
-      const rowCandidates = collectRowCandidates();
-      if (rowCandidates.length) {
-        candidates = rowCandidates.map((x) => ({ row: x.row, anchor: x.anchor, title: x.title, rowIndex: x.rowIndex, postingUrl: x.postingUrl }));
-      }
+    const rowCandidates = collectRowCandidates();
+    if (rowCandidates.length) {
+      const seenRows = new Set(
+        candidates
+          .map((item) => item && item.row)
+          .filter((row) => row instanceof Element)
+      );
+      rowCandidates.forEach((item) => {
+        if (!(item && item.row instanceof Element)) return;
+        if (seenRows.has(item.row)) return;
+        seenRows.add(item.row);
+        candidates.push({
+          row: item.row,
+          anchor: item.anchor,
+          title: item.title,
+          rowIndex: item.rowIndex,
+          postingUrl: item.postingUrl
+        });
+      });
     }
 
     if (!candidates.length) {
@@ -1426,7 +1458,19 @@
     }
 
     const ranked = rankCandidateContainers(candidates);
-    const scoped = ranked.container ? ranked.grouped.get(ranked.container) || [] : candidates;
+    let scoped = ranked.container ? ranked.grouped.get(ranked.container) || [] : candidates;
+    const scopeRoot = getContainerScopeRoot(ranked.container);
+    if (scopeRoot) {
+      const expanded = [];
+      ranked.grouped.forEach((items, container) => {
+        if (getContainerScopeRoot(container) === scopeRoot) {
+          expanded.push(...items);
+        }
+      });
+      if (expanded.length >= scoped.length) {
+        scoped = expanded;
+      }
+    }
 
     const byUrl = new Map();
     scoped.forEach((item, scopedIndex) => {
@@ -1545,6 +1589,7 @@
         "wwp-row-hidden-by-smart-search",
         "wwp-row-hidden-by-term-filter",
         "wwp-row-hidden-by-hard-filter",
+        "wwp-row-hidden-by-ranking-filter",
         "wwp-row-fit-strong",
         "wwp-row-fit-weak",
         "wwp-row-fit-block"
@@ -1562,6 +1607,20 @@
   function setListingsContainerPending(container, pending) {
     if (!(container instanceof Element)) return;
     container.classList.toggle("wwp-listings-pending", !!pending);
+  }
+
+  function syncRankedRowVisibility(allJobs, eligibleEntries) {
+    const eligibleRows = new Set(
+      (eligibleEntries || [])
+        .map((entry) => entry && entry.job && entry.job.row)
+        .filter((row) => row instanceof Element)
+    );
+
+    (allJobs || []).forEach((job) => {
+      const row = job && job.row;
+      if (!(row instanceof Element)) return;
+      row.classList.toggle("wwp-row-hidden-by-ranking-filter", !eligibleRows.has(row));
+    });
   }
 
   function computeJobSetSignature(jobs) {
@@ -3174,12 +3233,14 @@
     tabs.appendToTab("selected", selectedHost);
 
     let selectedRow = null;
+    let selectedEntryKey = "";
     const byKey = new Map();
     const byTitle = new Map();
     const resumeSkills = ns.getResumeSkillMap(settings);
     const knownPostingUrls = ns.unique(scoredJobs.map((entry) => (entry && entry.job ? entry.job.url : "")).filter(Boolean));
     let renderNonce = 0;
     let suppressSelectionHandlers = false;
+    let skipRowClickKey = "";
     const cleanup = [];
     const probeState = {
       iframe: null,
@@ -3885,13 +3946,33 @@
       return null;
     }
 
+    function renderEmptyState() {
+      selectedHost.innerHTML = "";
+      const emptyCard = ns.makeCard("No Job Selected");
+      emptyCard.innerHTML +=
+        '<p class="wwp-inline-note">Select a highlighted job row to open Analysis. If you switch tabs, the current selection is cleared.</p>';
+      selectedHost.appendChild(emptyCard);
+    }
+
+    function clearSelection(options) {
+      const opts = options || {};
+      renderNonce += 1;
+      if (selectedRow) selectedRow.classList.remove("wwp-row-selected");
+      selectedRow = null;
+      selectedEntryKey = "";
+      renderEmptyState();
+      if (opts.activateTab) {
+        tabs.activate(opts.activateTab);
+      }
+    }
+
     function render(entry, options) {
       const opts = options || {};
       if (!entry) return;
-      const selectedTitle = entry.job.title;
       if (selectedRow) selectedRow.classList.remove("wwp-row-selected");
       selectedRow = entry.job.row;
       selectedRow.classList.add("wwp-row-selected");
+      selectedEntryKey = entry.job.key || "";
 
       selectedHost.innerHTML = "";
       if (opts.showAccurate === true || hasAccurateSelectedData(entry)) {
@@ -3933,14 +4014,31 @@
         .finally(() => {});
     }
 
-    const sorted = scoredJobs.slice().sort((a, b) => b.rankingScore - a.rankingScore);
-    render(sorted[0] || scoredJobs[0], { requestAutoHydrate: true });
+    renderEmptyState();
+
+    if (typeof tabs.setOnChange === "function") {
+      tabs.setOnChange((activeId, _prevId, meta) => {
+        if (!meta || meta.source !== "user") return;
+        if (activeId === "selected") return;
+        if (!selectedEntryKey) return;
+        clearSelection();
+      });
+    }
 
     scoredJobs.forEach((entry) => {
       const row = entry.job.row;
       if (!row) return;
       const onRowClick = () => {
         if (suppressSelectionHandlers) return;
+        const entryKey = entry.job.key || "";
+        if (skipRowClickKey && skipRowClickKey === entryKey) {
+          skipRowClickKey = "";
+          return;
+        }
+        if (selectedEntryKey && selectedEntryKey === entryKey) {
+          clearSelection({ activateTab: "overview" });
+          return;
+        }
         render(entry, { requestAutoHydrate: true });
       };
       row.addEventListener("click", onRowClick, { passive: true });
@@ -3948,6 +4046,12 @@
       if (entry.job.anchor) {
         const onAnchorClick = () => {
           if (suppressSelectionHandlers) return;
+          const entryKey = entry.job.key || "";
+          skipRowClickKey = entryKey;
+          if (selectedEntryKey && selectedEntryKey === entryKey) {
+            clearSelection({ activateTab: "overview" });
+            return;
+          }
           render(entry, { requestLiveRefresh: true });
         };
         entry.job.anchor.addEventListener("click", onAnchorClick, { passive: true });
@@ -3959,12 +4063,6 @@
       if (suppressSelectionHandlers) return;
       const target = event.target;
       if (!(target instanceof Element)) return;
-
-      const row = target.closest("tr");
-      if (row && row.dataset && row.dataset.wwpJobKey && byKey.has(row.dataset.wwpJobKey)) {
-        render(byKey.get(row.dataset.wwpJobKey), { requestAutoHydrate: true });
-        return;
-      }
 
       const heading = target.closest("h1, h2, h3, .modal-title, .ui-dialog-title");
       if (heading) {
@@ -3993,8 +4091,7 @@
             fn();
           } catch (_error) {}
         });
-        if (selectedRow) selectedRow.classList.remove("wwp-row-selected");
-        selectedRow = null;
+        clearSelection();
       }
     };
   }
@@ -4201,9 +4298,11 @@
     if (prevRuntime && typeof prevRuntime.dispose === "function") {
       prevRuntime.dispose();
     }
+    const persistedUiState = ns.__WWP_LISTINGS_PANEL_UI_STATE || null;
 
     const runtime = {
       disposed: false,
+      panel: null,
       selection: null,
       observer: null,
       pollTimer: 0,
@@ -4218,9 +4317,19 @@
     runtime.dispose = () => {
       if (runtime.disposed) return;
       runtime.disposed = true;
+      if (runtime.panel) {
+        ns.__WWP_LISTINGS_PANEL_UI_STATE = {
+          panelPosition:
+            typeof runtime.panel.getPanelPosition === "function" ? runtime.panel.getPanelPosition() : null,
+          launcherPosition:
+            typeof runtime.panel.getLauncherPosition === "function" ? runtime.panel.getLauncherPosition() : null,
+          isOpen: typeof runtime.panel.isOpen === "function" ? runtime.panel.isOpen() : true
+        };
+      }
       if (runtime.selection && typeof runtime.selection.dispose === "function") {
         runtime.selection.dispose();
       }
+      runtime.panel = null;
       runtime.selection = null;
       if (runtime.observer) {
         runtime.observer.disconnect();
@@ -4253,8 +4362,12 @@
       id: "wwp-listings-panel",
       subtitle: "Scanning...",
       width: 420,
+      panelPosition: persistedUiState && persistedUiState.panelPosition ? persistedUiState.panelPosition : null,
+      launcherPosition: persistedUiState && persistedUiState.launcherPosition ? persistedUiState.launcherPosition : null,
+      initialOpen: !(persistedUiState && persistedUiState.isOpen === false),
       onDisablePage: () => ns.disableCurrentPage()
     });
+    runtime.panel = panel;
 
     const tabs = ns.createTabs(
       [
@@ -4280,6 +4393,7 @@
         runtime.rerunTimer = 0;
         if (runtime.disposed) return;
         run().catch((error) => {
+          if (isExtensionContextInvalidatedError(error)) return;
           console.error("WaterlooWorks+ listings refresh failed", error);
         });
       }, 450);
@@ -4342,7 +4456,6 @@
     const jobs = found.jobs;
     const container = found.container;
     runtime.currentSignature = computeJobSetSignature(jobs);
-    installRefreshWatchers(container);
 
     if (!jobs.length) {
       clearTabs();
@@ -4351,8 +4464,28 @@
         '<p class="wwp-inline-note">No job rows were detected in the main results container yet. Try toggling table filters or refreshing.</p>';
       tabs.appendToTab("overview", summaryCard);
       panel.setSubtitle("No listings detected");
+      runtime.pageClickHandler = (event) => {
+        if (runtime.disposed) return;
+        const target = event.target;
+        if (!(target instanceof Element)) return;
+        const clickable = target.closest("a, button, [role='button']");
+        if (!clickable) return;
+        const label = ns.normalizeText(clickable.textContent || "");
+        const aria = String(clickable.getAttribute("aria-label") || "").toLowerCase();
+        if (!/all jobs/.test(label) && !/all jobs/.test(aria)) return;
+        window.setTimeout(() => {
+          if (runtime.disposed) return;
+          run().catch((error) => {
+            if (isExtensionContextInvalidatedError(error)) return;
+            console.error("WaterlooWorks+ listings refresh failed", error);
+          });
+        }, 280);
+      };
+      document.addEventListener("click", runtime.pageClickHandler, true);
       return;
     }
+
+    installRefreshWatchers(container);
 
     ensureInlineStyles();
     runtime.ignoreChangeDetectionUntil = Date.now() + 1800;
@@ -4376,6 +4509,7 @@
       const eligibleJobs = hardFiltered.filtered;
 
       if (!eligibleJobs.length) {
+        syncRankedRowVisibility(jobs, []);
         const noneCard = ns.makeCard("Term-Length Filter");
         noneCard.innerHTML += `<p class="wwp-inline-note">No postings remain after strict filters (term-length + auto-reject eligibility rules).</p>`;
         noneCard.innerHTML += `<p class="wwp-inline-note">Try changing term-length to "Either" or updating work term / profile preferences.</p>`;
@@ -4384,9 +4518,10 @@
         return;
       }
 
+      syncRankedRowVisibility(jobs, eligibleJobs);
       eligibleJobs.forEach((entry) => annotateRow(entry.job, entry));
       reorderRows(eligibleJobs, container);
-      runtime.currentSignature = computeJobSetSignature(eligibleJobs.map((entry) => entry.job));
+      runtime.currentSignature = computeJobSetSignature(jobs);
 
       panel.setSubtitle(`Ranked ${eligibleJobs.length} jobs`);
 
@@ -4520,6 +4655,7 @@
       installProbeMessageListener();
       await run();
     } catch (error) {
+      if (isExtensionContextInvalidatedError(error)) return;
       console.error("WaterlooWorks+ listings script failed", error);
     }
   })();

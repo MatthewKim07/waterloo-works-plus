@@ -1,95 +1,115 @@
 # WaterlooWorks+
 
-WaterlooWorks+ is a client-side Chrome Extension (Manifest V3) MVP that enhances WaterlooWorks with:
+<p align="center">
+  <img src="src/assets/icons/icon-128.png" alt="WaterlooWorks+ logo" width="96" />
+</p>
 
-1. Resume-based job matching and re-ranking
-2. Job description intelligence extraction
-3. Hiring history + work term ratings intelligence with a viability score
+<h1 align="center">WaterlooWorks+</h1>
 
-All processing is done locally in the browser (`chrome.storage.local`), with no backend service.
+<p align="center">
+  A client-side Chrome extension that makes WaterlooWorks easier to search, rank, and analyze.
+</p>
 
-## Features (MVP)
+<p align="center">
+  <strong>📄 Resume-aware matching</strong> ·
+  <strong>🧠 Job posting analysis</strong> ·
+  <strong>📊 Ratings insights</strong> ·
+  <strong>🔒 Local-only processing</strong>
+</p>
 
-- Resume upload/paste in the WaterlooWorks+ app page (`PDF`, `DOCX`, `TXT`, or pasted text)
-- Resume parsing (`parseResume`) using dictionary + regex + n-gram scoring
-- Listings-page job scraping + re-ranking with score badges
-- Posting-page requirement extraction + constraints chips + recommendation panel
-- Ratings-page chart/table parsing + compatibility insights + recommendation panel
-- Composite viability scoring with explainable breakdown
-- Global enable toggle + per-page disable toggle
-- Cache for parsed job postings in local storage
-- Concurrency-limited background fetches for postings
+---
 
-## Folder Structure
+> [!IMPORTANT]
+> This repository is published for portfolio/showcase purposes only. No license is granted for reuse, modification, or redistribution.
+
+> [!NOTE]
+> All processing happens locally in the browser using `chrome.storage.local`. There is no backend service for resume data, job data, or user profiles.
+
+## ✨ What It Does
+
+WaterlooWorks+ is a Manifest V3 Chrome extension built to improve the default WaterlooWorks experience with:
+
+- smarter job ranking based on resume and preferences
+- structured extraction of requirements from job postings
+- hiring-history and work-term ratings insights
+- local tracking helpers for applications and profiles
+- optional autofill planning and resume profile management
+
+## 🎯 Feature Snapshot
+
+| Feature | What it adds |
+|---|---|
+| 📄 Resume parsing | Upload or paste `PDF`, `DOCX`, or `TXT` resumes and convert them into structured skill/profile signals |
+| 🏷️ Re-ranked job listings | Re-scores listings and surfaces fit indicators directly in the listings experience |
+| 🔍 Posting intelligence | Extracts requirements, constraints, and recommendation signals from individual job postings |
+| 📊 Ratings analysis | Parses WaterlooWorks ratings pages into clearer compatibility and viability insights |
+| 🧾 Application tracking | Stores local tracker rows and application-related events in browser storage |
+| 🛠️ Profile controls | Supports named resume profiles and preference-based matching behavior |
+| ⚡ Background probing | Uses a constrained background workflow to hydrate job posting details from WaterlooWorks pages |
+
+## 🔒 Privacy / Scope
+
+This project is intentionally local-first:
+
+- no remote database
+- no hosted API
+- no external analytics
+- no third-party auth
+- no storage outside the browser's local extension storage
+
+The extension is scoped to WaterlooWorks domains in [`manifest.json`](manifest.json), and background fetch behavior is restricted to WaterlooWorks URLs in [`src/background/service-worker.js`](src/background/service-worker.js).
+
+## 🧱 Tech Overview
+
+- **Platform:** Chrome Extension, Manifest V3
+- **UI surfaces:** popup, app/options page, content-script overlays
+- **Storage:** `chrome.storage.local`
+- **Architecture:** shared parsing/scoring modules reused across content scripts and app pages
+- **Processing model:** all analysis is performed client-side in the browser
+
+## 🗂️ Project Layout
 
 ```text
 .
 ├── manifest.json
 ├── package.json
-├── README.md
-└── src
-    ├── background
-    │   └── service-worker.js
-    ├── app
-    │   ├── app.css
-    │   └── app.html
-    ├── content
-    │   ├── common.js
-    │   ├── listings.js
-    │   ├── posting.js
-    │   └── ratings.js
-    ├── options
-    │   ├── options.css
-    │   ├── options.html
-    │   └── options.js
-    ├── popup
-    │   ├── popup.css
-    │   ├── popup.html
-    │   └── popup.js
-    └── shared
-        ├── job-parser.js
-        ├── ratings-parser.js
-        ├── resume-parser.js
-        ├── scoring.js
-        ├── skills.js
-        ├── storage.js
-        ├── ui.js
-        └── utils.js
+├── docs/
+│   ├── architecture.md
+│   └── storage-contracts.md
+└── src/
+    ├── app/          # full-page settings / dashboard UI
+    ├── background/   # MV3 service worker
+    ├── content/      # WaterlooWorks page integrations
+    ├── popup/        # extension popup
+    ├── shared/       # parsers, storage, scoring, helpers
+    └── assets/icons/ # branding assets
 ```
 
-## Install in Chrome (Load Unpacked)
+## 🚀 Run Locally
 
-1. Open `chrome://extensions`.
-2. Enable **Developer mode**.
-3. Click **Load unpacked**.
-4. Select this project folder (root containing `manifest.json`).
+No build step is required.
 
-## Open the WaterlooWorks+ App Page
+1. Open `chrome://extensions`
+2. Enable **Developer mode**
+3. Click **Load unpacked**
+4. Select this repository root
 
-- Click the extension icon, then click **Open WaterlooWorks+ App**.
-- You can also open it from Chrome extension details via **Extension options**.
+### Open the app page
 
-## Build / Run
+- Click the extension icon and open **WaterlooWorks+ App**
+- Or open it from the extension's details page via **Extension options**
 
-No build step is required for this scaffold.
+## ✅ Quick Check
 
-- Use directly as an unpacked extension.
-- Optional syntax check:
+If you want a lightweight syntax check:
 
 ```bash
 npm run check
 ```
 
-## Where to Configure Matching Dictionaries
+## 🧠 Core Capabilities
 
-Update `src/shared/skills.js`:
-
-- `SKILLS_DICTIONARY`
-- Each entry supports: `key`, `aliases`, `category`, `baseWeight`
-
-## Core Shared Functions
-
-Implemented in `src/shared/*`:
+Implemented across [`src/shared/`](src/shared):
 
 - `parseResume(text)`
 - `parseJobPosting(htmlOrDoc)`
@@ -101,16 +121,15 @@ Implemented in `src/shared/*`:
 - `computeViabilityScore(skill, term, faculty, selectivity)`
 - `recommendAction(viability, flags)`
 
-## Notes on WaterlooWorks DOM Parsing
+## ⚠️ Limitations
 
-Selectors are intentionally resilient and heuristic. Some selectors include `TODO` comments where site-specific tuning is expected.
+- PDF extraction is heuristic and may fail on scanned/image PDFs
+- DOCX extraction depends on ZIP/deflate parsing and may fail for unusual encodings
+- Ratings chart extraction depends on what data WaterlooWorks exposes in the DOM
+- Some selectors are intentionally heuristic and may need tuning if WaterlooWorks changes its markup
 
-## Limitations
+## 📘 Additional Notes
 
-- PDF extraction is heuristic and may fail on scanned/image PDFs.
-- DOCX extraction uses ZIP/deflate parsing and may fail for uncommon document encodings.
-- Ratings chart extraction depends on DOM accessibility:
-  - First tries aria/legend/script data
-  - If not available, falls back to table-driven insights
-  - If chart values are inaccessible, shows chart-unavailable notices
-- Page detection and row parsing may require minor selector updates if WaterlooWorks DOM changes.
+- Storage keys are documented in [`docs/storage-contracts.md`](docs/storage-contracts.md)
+- Architecture notes are documented in [`docs/architecture.md`](docs/architecture.md)
+- The repository currently contains no public-use license by design
