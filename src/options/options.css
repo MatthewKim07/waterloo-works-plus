@@ -247,6 +247,22 @@ button.secondary {
   font-size: 0.75rem;
 }
 
+.autocomplete-hint {
+  display: none;
+}
+
+#skillAutocomplete .autocomplete-item:hover .autocomplete-hint,
+#skillAutocomplete .autocomplete-item.active .autocomplete-hint {
+  display: inline;
+  margin-left: auto;
+  padding-left: 10px;
+  color: #2563eb;
+  font-size: 0.72rem;
+  font-style: italic;
+  opacity: 0.8;
+  white-space: nowrap;
+}
+
 .chips {
   display: flex;
   gap: 6px;
@@ -274,6 +290,20 @@ button.secondary {
 
 .chip-editable:hover {
   filter: brightness(0.98);
+}
+
+.chip-x {
+  display: none;
+  margin-left: 4px;
+  font-weight: 900;
+  opacity: 0.7;
+  font-size: 0.9em;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.chip-editable:hover .chip-x {
+  display: inline;
 }
 
 .chip-parsed {

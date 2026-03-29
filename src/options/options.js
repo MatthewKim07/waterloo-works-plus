@@ -323,6 +323,12 @@
           button.appendChild(sub);
         }
 
+        const hint = document.createElement("span");
+        hint.className = "autocomplete-hint";
+        hint.setAttribute("aria-hidden", "true");
+        hint.textContent = "click to add";
+        button.appendChild(hint);
+
         list.appendChild(button);
       });
       list.hidden = false;
@@ -360,6 +366,16 @@
       } else if (event.key === "Escape") {
         event.preventDefault();
         hide();
+      }
+    });
+
+    list.addEventListener("mouseenter", () => {
+      list.querySelectorAll(".autocomplete-item.active").forEach(el => el.classList.remove("active"));
+    });
+
+    list.addEventListener("mouseleave", () => {
+      if (activeIndex >= 0 && list.children[activeIndex]) {
+        list.children[activeIndex].classList.add("active");
       }
     });
 
@@ -427,7 +443,16 @@
     }
 
     const suffix = opts.suffix ? ` ${opts.suffix}` : "";
-    chip.textContent = `${skill}${suffix}`;
+    const labelSpan = document.createElement("span");
+    labelSpan.textContent = `${skill}${suffix}`;
+    chip.appendChild(labelSpan);
+    if (opts.action === "toggleExclude" || opts.action === "removeManual") {
+      const xSpan = document.createElement("span");
+      xSpan.className = "chip-x";
+      xSpan.setAttribute("aria-hidden", "true");
+      xSpan.textContent = "×";
+      chip.appendChild(xSpan);
+    }
     if (opts.ariaLabel) {
       chip.setAttribute("aria-label", opts.ariaLabel);
       chip.title = opts.ariaLabel;
@@ -525,7 +550,7 @@
 
   function initAutocompleteControllers() {
     if (!skillAutocompleteController) {
-      skillAutocompleteController = createAutocompleteController("skillInput", "skillAutocomplete", getSkillSuggestionItems);
+      skillAutocompleteController = createAutocompleteController("skillInput", "skillAutocomplete", getSkillSuggestionItems, () => addManualSkillFromInput());
     }
     if (!facultyAutocompleteController) {
       facultyAutocompleteController = createAutocompleteController("faculty", "facultyAutocomplete", getFacultySuggestionItems);
