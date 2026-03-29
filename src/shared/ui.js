@@ -815,10 +815,12 @@
     const state = {
       activeId: initialId || (defs[0] ? defs[0].id : null),
       buttons: new Map(),
-      panes: new Map()
+      panes: new Map(),
+      onChange: null
     };
 
-    function setActive(id) {
+    function setActive(id, meta) {
+      const prevId = state.activeId;
       state.activeId = id;
       state.buttons.forEach((btn, key) => {
         btn.classList.toggle("active", key === id);
@@ -826,6 +828,9 @@
       state.panes.forEach((pane, key) => {
         pane.classList.toggle("active", key === id);
       });
+      if (prevId !== id && typeof state.onChange === "function") {
+        state.onChange(id, prevId, meta || { source: "api" });
+      }
     }
 
     defs.forEach((def, index) => {
@@ -836,7 +841,7 @@
       btn.type = "button";
       btn.className = "wwp-tab-btn";
       btn.textContent = label;
-      btn.addEventListener("click", () => setActive(id));
+      btn.addEventListener("click", () => setActive(id, { source: "user" }));
       nav.appendChild(btn);
 
       const pane = document.createElement("section");
@@ -866,7 +871,10 @@
       },
       activate(id) {
         if (!state.panes.has(id)) return;
-        setActive(id);
+        setActive(id, { source: "api" });
+      },
+      setOnChange(handler) {
+        state.onChange = typeof handler === "function" ? handler : null;
       },
       appendToTab(id, node) {
         const pane = state.panes.get(id);
