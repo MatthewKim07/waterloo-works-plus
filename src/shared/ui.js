@@ -758,7 +758,7 @@
       clampLauncherPosition();
     };
 
-    panel.addEventListener("pointerdown", onPanelPointerDown);
+    header.addEventListener("pointerdown", onPanelPointerDown);
     launcher.addEventListener("pointerdown", onLauncherPointerDown);
     launcher.addEventListener("keydown", onLauncherKeyDown);
     window.addEventListener("pointermove", onWindowPointerMove);
@@ -767,7 +767,7 @@
     window.addEventListener("resize", onWindowResize);
 
     const cleanup = () => {
-      panel.removeEventListener("pointerdown", onPanelPointerDown);
+      header.removeEventListener("pointerdown", onPanelPointerDown);
       launcher.removeEventListener("pointerdown", onLauncherPointerDown);
       launcher.removeEventListener("keydown", onLauncherKeyDown);
       window.removeEventListener("pointermove", onWindowPointerMove);
