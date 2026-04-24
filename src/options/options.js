@@ -52,6 +52,12 @@
     node.style.color = isError ? "#b91c1c" : "#475569";
   }
 
+  function setDebugOutput(id, text) {
+    const node = byId(id);
+    if (!node) return;
+    node.textContent = String(text || "");
+  }
+
   function setResumeFileNameLabel(name) {
     const label = byId("resumeFileName");
     if (!label) return;
@@ -632,6 +638,11 @@
     const resumeText = byId("resumeText");
     if (resumeText) resumeText.value = settings.resumeRawText || "";
 
+    const aiSmokeText = byId("aiSmokeText");
+    if (aiSmokeText && !String(aiSmokeText.value || "").trim()) {
+      aiSmokeText.value = String(settings.resumeRawText || "").trim().slice(0, 1600);
+    }
+
     const workTerm = byId("workTerm");
     if (workTerm) workTerm.value = String(normalizeWorkTerm(settings.preferences.workTerm || 1));
 
@@ -653,6 +664,44 @@
     if (trackerMount && ns.renderTrackerDashboard) {
       const tstat = byId("trackerStatus");
       ns.renderTrackerDashboard(trackerMount, tstat).catch(() => {});
+    }
+  }
+
+  async function runAiSmokeTest() {
+    const statusId = "aiStatus";
+    const outputId = "aiOutput";
+    const input = byId("aiSmokeText");
+    if (!input) return;
+    if (!ns.aiClient || typeof ns.aiClient.runEmbeddingSmokeTest !== "function") {
+      setStatus(statusId, "AI client is unavailable on this page.", true);
+      return;
+    }
+
+    const raw = String(input.value || "").trim();
+    if (!raw) {
+      setStatus(statusId, "Paste some text before running the AI smoke test.", true);
+      return;
+    }
+
+    setStatus(statusId, "Running local embedding smoke test. First run may take a while while the model downloads.", false);
+    setDebugOutput(outputId, "Waiting for AI runtime...");
+
+    try {
+      const result = await ns.aiClient.runEmbeddingSmokeTest(raw.slice(0, 4000));
+      const lines = [
+        `Model: ${result.modelId}`,
+        `Backend: ${result.backend}`,
+        `DType: ${result.dtype}`,
+        `Dimensions: ${result.dimensions}`,
+        `Input chars: ${result.inputChars}`,
+        `Duration: ${result.durationMs} ms`,
+        `Preview: [${(result.preview || []).join(", ")}]`
+      ];
+      setDebugOutput(outputId, lines.join("\n"));
+      setStatus(statusId, "AI smoke test completed.", false);
+    } catch (error) {
+      setDebugOutput(outputId, `Smoke test failed.\n\n${String(error && error.message ? error.message : error)}`);
+      setStatus(statusId, "AI smoke test failed.", true);
     }
   }
 
@@ -866,6 +915,11 @@
     const savePrefsBtn = byId("savePrefsBtn");
     if (savePrefsBtn) {
       savePrefsBtn.addEventListener("click", savePreferences);
+    }
+
+    const runAiSmokeTestBtn = byId("runAiSmokeTestBtn");
+    if (runAiSmokeTestBtn) {
+      runAiSmokeTestBtn.addEventListener("click", runAiSmokeTest);
     }
 
     const profileSelect = byId("profileSelect");

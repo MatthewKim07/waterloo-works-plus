@@ -1,6 +1,85 @@
 importScripts("../shared/schema.js");
 importScripts("../shared/storage.js");
 
+const OFFSCREEN_AI_PATH = "src/offscreen/ai.html";
+let creatingAiDocument = null;
+const AI_RUNTIME_READY_TIMEOUT_MS = 15000;
+const aiRuntimeState = {
+  ready: false,
+  lastError: "",
+  lastReadyAt: 0
+};
+
+async function hasOffscreenDocument(path) {
+  const documentUrl = chrome.runtime.getURL(path);
+  if (chrome.runtime.getContexts) {
+    const contexts = await chrome.runtime.getContexts({
+      contextTypes: ["OFFSCREEN_DOCUMENT"],
+      documentUrls: [documentUrl]
+    });
+    return contexts.length > 0;
+  }
+
+  const matchedClients = await clients.matchAll();
+  return matchedClients.some((client) => client.url === documentUrl);
+}
+
+async function ensureAiOffscreenDocument() {
+  if (await hasOffscreenDocument(OFFSCREEN_AI_PATH)) return;
+  if (creatingAiDocument) {
+    await creatingAiDocument;
+    return;
+  }
+
+  const reasons = [];
+  if (chrome.offscreen && chrome.offscreen.Reason) {
+    if (chrome.offscreen.Reason.WORKERS) reasons.push(chrome.offscreen.Reason.WORKERS);
+    if (!reasons.length && chrome.offscreen.Reason.DOM_PARSER) reasons.push(chrome.offscreen.Reason.DOM_PARSER);
+  }
+  if (!reasons.length) reasons.push("WORKERS");
+
+  creatingAiDocument = chrome.offscreen.createDocument({
+    url: OFFSCREEN_AI_PATH,
+    reasons,
+    justification: "Run the local WaterlooWorks+ embedding runtime in a hidden document"
+  });
+
+  try {
+    await creatingAiDocument;
+  } finally {
+    creatingAiDocument = null;
+  }
+}
+
+async function waitForAiRuntimeReady(timeoutMs) {
+  const deadline = Date.now() + (Number.isFinite(timeoutMs) ? timeoutMs : AI_RUNTIME_READY_TIMEOUT_MS);
+  while (Date.now() < deadline) {
+    if (aiRuntimeState.ready) return;
+    if (aiRuntimeState.lastError) {
+      throw new Error(aiRuntimeState.lastError);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 120));
+  }
+  throw new Error("AI runtime did not become ready in time");
+}
+
+function sendMessageToOffscreen(message) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(message, (response) => {
+      const lastError = chrome.runtime.lastError;
+      if (lastError) {
+        reject(new Error(lastError.message || "Offscreen runtime message failed"));
+        return;
+      }
+      if (!response) {
+        reject(new Error("Offscreen runtime did not respond"));
+        return;
+      }
+      resolve(response);
+    });
+  });
+}
+
 chrome.runtime.onInstalled.addListener(async () => {
   const key = globalThis.WWP.STORAGE_KEYS.settings;
   const current = await chrome.storage.local.get([key]);
@@ -11,6 +90,20 @@ chrome.runtime.onInstalled.addListener(async () => {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (!message || typeof message !== "object") return;
+
+  if (message.type === "wwp:aiRuntimeReady") {
+    aiRuntimeState.ready = true;
+    aiRuntimeState.lastError = "";
+    aiRuntimeState.lastReadyAt = Date.now();
+    return;
+  }
+
+  if (message.type === "wwp:aiRuntimeBootError") {
+    const payload = message.payload && typeof message.payload === "object" ? message.payload : {};
+    aiRuntimeState.ready = false;
+    aiRuntimeState.lastError = String(payload.error || "AI runtime failed to boot");
+    return;
+  }
 
   if (message.type === "wwp:fetchJobHtml") {
     const url = message.url;
@@ -47,6 +140,32 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         sendResponse({ settings });
       } catch (_error) {
         sendResponse({ settings: globalThis.WWP.getDefaultSettingsShape() });
+      }
+    })();
+    return true;
+  }
+
+  if (message.type === "wwp:aiEmbeddingSmokeTest") {
+    const payload = message.payload && typeof message.payload === "object" ? message.payload : {};
+    (async () => {
+      try {
+        const hadDocument = await hasOffscreenDocument(OFFSCREEN_AI_PATH);
+        if (!hadDocument) {
+          aiRuntimeState.lastError = "";
+          aiRuntimeState.ready = false;
+        }
+        await ensureAiOffscreenDocument();
+        await waitForAiRuntimeReady(AI_RUNTIME_READY_TIMEOUT_MS);
+        const result = await sendMessageToOffscreen({
+          target: "offscreen-ai",
+          type: "wwp:aiEmbeddingSmokeTest",
+          payload: {
+            text: typeof payload.text === "string" ? payload.text : ""
+          }
+        });
+        sendResponse(result);
+      } catch (error) {
+        sendResponse({ ok: false, error: String(error && error.message ? error.message : error) });
       }
     })();
     return true;

@@ -19,6 +19,7 @@
         <nav>
           <a href="#extension">Extension</a>
           <a href="#resume">Resume</a>
+          <a href="#ai">AI Lab</a>
           <a href="#tracker">Applications</a>
           <a href="#prefs">Preferences</a>
         </nav>
@@ -110,6 +111,29 @@
           </div>
         </section>
 
+        <section class="card" id="ai">
+          <h2>Local AI Lab</h2>
+          <p class="section-note">
+            Milestone 1 smoke test for the offscreen embedding runtime. This does not change ranking yet. The first run may take a while because the model
+            needs to download and cache locally.
+          </p>
+
+          <label class="label" for="aiSmokeText">Smoke Test Text</label>
+          <textarea
+            id="aiSmokeText"
+            rows="6"
+            placeholder="Paste a short resume or job summary to test the local embedding runtime..."
+            spellcheck="false"
+          ></textarea>
+
+          <div class="actions">
+            <button id="runAiSmokeTestBtn" type="button">Run AI Smoke Test</button>
+          </div>
+
+          <p id="aiStatus" class="status"></p>
+          <pre id="aiOutput" class="debug-output">No AI smoke test run yet.</pre>
+        </section>
+
         <section class="card" id="tracker">
           <h2>Applications</h2>
           <p class="section-note">
@@ -173,6 +197,7 @@
     <script src="../shared/schema.js"></script>
     <script src="../shared/storage.js"></script>
     <script src="../shared/profile-store.js"></script>
+    <script src="../shared/ai-client.js"></script>
     <script src="../shared/skills.js"></script>
     <script src="../shared/utils.js"></script>
     <script src="../vendor/fflate.js"></script>

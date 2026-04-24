@@ -187,6 +187,20 @@ h2 {
   font-size: 0.9rem;
 }
 
+.debug-output {
+  margin: 0;
+  border: 1px solid #c9d6ef;
+  border-radius: 12px;
+  background: #0f172a;
+  color: #dbeafe;
+  padding: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: "SFMono-Regular", "Menlo", "Monaco", monospace;
+  font-size: 0.83rem;
+  line-height: 1.5;
+}
+
 .profile-controls {
   display: grid;
   gap: 8px;

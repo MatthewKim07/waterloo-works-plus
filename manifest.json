@@ -3,13 +3,18 @@
   "name": "WaterlooWorks+",
   "description": "Client-side WaterlooWorks intelligence: resume matching, job parsing, and ratings insights.",
   "version": "0.1.0",
-  "permissions": ["storage", "tabs"],
+  "permissions": ["storage", "tabs", "offscreen"],
   "host_permissions": [
     "*://waterlooworks.uwaterloo.ca/*",
-    "*://*.waterlooworks.uwaterloo.ca/*"
+    "*://*.waterlooworks.uwaterloo.ca/*",
+    "https://huggingface.co/*",
+    "https://*.huggingface.co/*"
   ],
   "background": {
     "service_worker": "src/background/service-worker.js"
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';"
   },
   "icons": {
     "16": "src/assets/icons/icon-16.png",
